@@ -10,17 +10,31 @@ cd backend
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-python -m pytest -q                # 테스트 16개 통과 확인
+python -m pytest -q                # 테스트 19개 통과 확인
 uvicorn app.main:app --reload      # http://127.0.0.1:8000/docs 에서 바로 호출해 볼 수 있다
 ```
 
 시연 데이터: `python -m scripts.seed_demo demo-user`
 
+### 자연어 등록을 로컬 Ollama로 돌리기 (기본값)
+
+```bash
+# Ollama 설치 후 (https://ollama.com)
+ollama pull qwen2.5:7b             # 한국어가 되는 모델 아무거나. 바꾸면 OLLAMA_MODEL도 같이 바꾼다
+ollama serve                       # 이미 백그라운드로 떠 있으면 생략
+uvicorn app.main:app --reload      # 다른 터미널에서
+```
+
+Ollama가 꺼져 있으면 `/tasks/parse`만 422를 돌려주고 나머지 API는 정상 동작한다.
+
 환경변수
 - `DB_PATH`: 기본 `bakkwodo.db`
 - `CORS_ORIGINS`: 기본 `*`
-- `ANTHROPIC_API_KEY`: 자연어 등록(`/tasks/parse`)에 필요. 없으면 그 API만 503을 돌려주고 나머지는 정상 동작
-- `LLM_MODEL`: 기본 `claude-haiku-5-5`
+- `LLM_PROVIDER`: `ollama`(기본) 또는 `anthropic`
+- `OLLAMA_URL`: 기본 `http://localhost:11434`
+- `OLLAMA_MODEL`: 기본 `qwen2.5:7b`
+- `OLLAMA_TIMEOUT`: 기본 120(초). 처음 호출은 모델을 불러오느라 느릴 수 있다
+- `ANTHROPIC_API_KEY`, `LLM_MODEL`: `LLM_PROVIDER=anthropic`일 때만 사용 (기본 모델 `claude-haiku-5-5`)
 
 ## 프론트 연동 규칙
 
@@ -64,8 +78,8 @@ uvicorn app.main:app --reload      # http://127.0.0.1:8000/docs 에서 바로 �
 
 확인 화면에서 `drafts`와 `assumptions`를 보여주고 예상 시간 등을 고치게 한 뒤, 확정하면
 `{"tasks": drafts}`를 `POST /tasks/batch`로 보낸다.
-- `503`: 서버에 API 키가 없음 → 직접 입력 폼으로
-- `422`: AI가 문장을 이해하지 못함 → 다시 입력하거나 직접 입력 폼으로
+- `503`: AI 설정이 없음(예: anthropic인데 키 없음) → 직접 입력 폼으로
+- `422`: AI가 문장을 이해하지 못했거나 Ollama가 꺼져 있음 → 다시 입력하거나 직접 입력 폼으로
 
 `POST /tasks`(하나 저장)의 본문은 draft 하나와 같은 모양이다. `estimated_minutes`를 빼면 60분.
 

@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -52,6 +53,57 @@ def test_bad_json_or_empty_raises(monkeypatch):
 
 
 def test_missing_key_is_not_configured(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     with pytest.raises(nlp.NotConfigured):
+        nlp.call_llm("s", "u")
+
+
+def test_date_table_in_prompt():
+    msg = nlp.build_user_message("x", NOW)
+    assert "- 오늘: 2026-11-10 (화요일)" in msg
+    assert "- 내일: 2026-11-11 (수요일)" in msg
+    assert "- 3일 뒤: 2026-11-13 (금요일)" in msg
+
+
+class FakeResp:
+    def __init__(self, body):
+        self.body = body
+
+    def read(self):
+        return self.body.encode("utf-8")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def test_ollama_request_and_response(monkeypatch):
+    sent = {}
+
+    def fake_urlopen(req, timeout):
+        sent["url"] = req.full_url
+        sent["body"] = json.loads(req.data.decode("utf-8"))
+        return FakeResp(json.dumps({"message": {"role": "assistant", "content": '{"tasks": []}'}}))
+
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("OLLAMA_MODEL", "qwen2.5:7b")
+    monkeypatch.delenv("OLLAMA_URL", raising=False)
+    monkeypatch.setattr(nlp.urllib.request, "urlopen", fake_urlopen)
+    assert nlp.call_llm("sys", "user") == '{"tasks": []}'
+    assert sent["url"] == "http://localhost:11434/api/chat"
+    assert sent["body"]["model"] == "qwen2.5:7b"
+    assert sent["body"]["stream"] is False and sent["body"]["format"] == "json"
+    assert sent["body"]["messages"][0] == {"role": "system", "content": "sys"}
+
+
+def test_ollama_not_running(monkeypatch):
+    def refuse(req, timeout):
+        raise nlp.urllib.error.URLError("Connection refused")
+
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.setattr(nlp.urllib.request, "urlopen", refuse)
+    with pytest.raises(nlp.ParseError):
         nlp.call_llm("s", "u")
