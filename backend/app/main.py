@@ -9,17 +9,12 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import db, nlp, planner
-from .schemas import ParseIn, SettingsIn, SwitchIn, TaskCreate, TaskUpdate, UnitDone, WastedIn
+from .schemas import ParseIn, SettingsIn, TaskBatchCreate, TaskCreate, TaskUpdate, WastedIn
 
-app = FastAPI(title="바꿔도 돼? API", version="0.1.0")
+app = FastAPI(title="바꿔도 돼? API", version="0.2.0")
 
 origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["*"], allow_headers=["*"])
 
 
 def get_conn() -> Iterator:
@@ -31,7 +26,7 @@ def get_conn() -> Iterator:
 
 
 def get_user(x_user_id: str = Header(..., min_length=1, max_length=64)) -> str:
-    """로그인 대신 브라우저마다 만든 임의 ID를 X-User-Id 헤더로 받는다."""
+    """로그인 대신 기기마다 만든 임의 ID를 X-User-Id 헤더로 받는다."""
     return x_user_id
 
 
@@ -59,27 +54,32 @@ def write_settings(body: SettingsIn, user: str = Depends(get_user), conn=Depends
 # ---------- 일 ----------
 
 @app.post("/tasks/parse")
-def parse_task(body: ParseIn, user: str = Depends(get_user)):
-    """자연어 한 줄 → 할 일 초안. 저장하지 않는다. 사용자가 확인한 draft를 POST /tasks로 보낸다."""
+def parse_tasks(body: ParseIn, user: str = Depends(get_user)):
+    """자연어 목록 → 할 일 초안. 저장하지 않는다. 확인한 drafts를 POST /tasks/batch로 보낸다."""
     try:
-        return nlp.parse_task_text(body.text, resolve_now(body.now))
+        return nlp.parse_tasks_text(body.text, resolve_now(body.now))
     except nlp.NotConfigured as e:
         raise HTTPException(503, str(e))
     except nlp.ParseError as e:
         raise HTTPException(422, str(e))
 
 
+@app.post("/tasks/batch", status_code=201)
+def create_tasks(body: TaskBatchCreate, user: str = Depends(get_user), conn=Depends(get_conn)):
+    created = [db.create_task(conn, user, t.name, t.deadline, t.important, t.estimated_minutes,
+                              commit=False) for t in body.tasks]
+    conn.commit()
+    return created
+
+
 @app.post("/tasks", status_code=201)
 def create_task(body: TaskCreate, user: str = Depends(get_user), conn=Depends(get_conn)):
-    task = db.create_task(conn, user, body.name, body.deadline, body.important,
-                          [u.model_dump() for u in body.units])
-    db.log_event(conn, user, "task_created", task["id"])
-    return task
+    return db.create_task(conn, user, body.name, body.deadline, body.important, body.estimated_minutes)
 
 
 @app.get("/tasks")
-def list_tasks(user: str = Depends(get_user), conn=Depends(get_conn)):
-    return db.list_tasks(conn, user)
+def list_tasks(include_done: bool = True, user: str = Depends(get_user), conn=Depends(get_conn)):
+    return db.list_tasks(conn, user, include_done)
 
 
 @app.get("/tasks/{task_id}")
@@ -91,10 +91,9 @@ def get_task(task_id: int, user: str = Depends(get_user), conn=Depends(get_conn)
 
 
 @app.patch("/tasks/{task_id}")
-def update_task(task_id: int, body: TaskUpdate, user: str = Depends(get_user),
-                conn=Depends(get_conn)):
-    units = [u.model_dump() for u in body.units] if body.units is not None else None
-    task = db.update_task(conn, user, task_id, body.name, body.deadline, body.important, units)
+def update_task(task_id: int, body: TaskUpdate, user: str = Depends(get_user), conn=Depends(get_conn)):
+    task = db.update_task(conn, user, task_id, body.name, body.deadline, body.important,
+                          body.estimated_minutes, body.done)
     if not task:
         raise HTTPException(404, "일을 찾을 수 없어요")
     return task
@@ -104,14 +103,6 @@ def update_task(task_id: int, body: TaskUpdate, user: str = Depends(get_user),
 def delete_task(task_id: int, user: str = Depends(get_user), conn=Depends(get_conn)):
     if not db.delete_task(conn, user, task_id):
         raise HTTPException(404, "일을 찾을 수 없어요")
-
-
-@app.patch("/units/{unit_id}")
-def mark_unit(unit_id: int, body: UnitDone, user: str = Depends(get_user),
-              conn=Depends(get_conn)):
-    if not db.set_units_done(conn, user, [unit_id], body.done):
-        raise HTTPException(404, "단위를 찾을 수 없어요")
-    return {"id": unit_id, "done": body.done}
 
 
 # ---------- 계획 ----------
@@ -125,20 +116,9 @@ def get_plan(now: datetime | None = Query(None, description="시연용 현재 �
 
 @app.post("/plan/wasted")
 def wasted(body: WastedIn, user: str = Depends(get_user), conn=Depends(get_conn)):
-    """'시간 날렸어': 끝낸 단위를 반영하고, 날린 시간 때문에 새로 못 하게 된 일을 알려준다."""
-    if body.done_unit_ids:
-        db.set_units_done(conn, user, body.done_unit_ids, True)
+    """고해성사: 끝낸 일을 반영하고, 딴짓 때문에 시간이 모자라게 된 일을 알려준다."""
+    if body.done_task_ids:
+        db.set_done(conn, user, body.done_task_ids)
     db.log_event(conn, user, "wasted", None, {"minutes": body.wasted_minutes})
     return planner.wasted_preview(db.planner_tasks(conn, user), resolve_now(body.now),
                                   body.wasted_minutes, db.get_daily_minutes(conn, user))
-
-
-@app.post("/plan/switch")
-def switch(body: SwitchIn, user: str = Depends(get_user), conn=Depends(get_conn)):
-    """'다른 거 할래': minutes 동안 바꿔도 되는지, 넘기면 뭘 못 하게 되는지 미리 계산한다."""
-    if body.target_task_id is not None and not db.get_task(conn, user, body.target_task_id):
-        raise HTTPException(404, "옮겨 갈 일을 찾을 수 없어요")
-    db.log_event(conn, user, "switch", body.target_task_id, {"minutes": body.minutes})
-    return planner.switch_preview(db.planner_tasks(conn, user), resolve_now(body.now),
-                                  body.minutes, body.target_task_id,
-                                  db.get_daily_minutes(conn, user))

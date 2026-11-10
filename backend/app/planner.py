@@ -1,21 +1,12 @@
-"""남은 시간에 맞춰 '꼭 해야 할 최소한의 일'을 계산하는 순수 로직.
+"""남은 시간 안에서 '지금 무엇을 할지'를 정하는 순수 로직.
 
+일(과목) 단위로 계산한다. 일마다 마감과 총 예상 시간만 있으면 된다.
 DB나 FastAPI에 의존하지 않으므로 단독으로 테스트할 수 있다.
 """
 from __future__ import annotations
 
-import copy
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, time, timedelta
-
-
-@dataclass
-class Unit:
-    id: int
-    name: str
-    minutes: int
-    required: bool
-    order: int = 0
 
 
 @dataclass
@@ -24,7 +15,7 @@ class Task:
     name: str
     deadline: datetime
     important: bool
-    units: list[Unit] = field(default_factory=list)  # 아직 안 끝낸 단위만 넣는다
+    estimated_minutes: int
 
 
 def available_minutes(now: datetime, deadline: datetime, daily_minutes: int) -> int:
@@ -52,157 +43,85 @@ def available_minutes(now: datetime, deadline: datetime, daily_minutes: int) -> 
     return min(estimate, real_left)
 
 
-def _unit_dict(u: Unit) -> dict:
-    return {"id": u.id, "name": u.name, "minutes": u.minutes, "required": u.required}
-
-
 def build_plan(tasks: list[Task], now: datetime, daily_minutes: int = 480) -> dict:
-    """마감이 빠른 순으로 필수 단위부터 시간을 배정한다.
+    """마감이 빠른 순(같으면 중요한 일 먼저)으로 시간을 배정한다.
 
-    단위 하나를 넣을 때마다 '모든 마감에서 그 마감까지 배정한 시간 <= 쓸 수 있는 시간'을
-    만족하는지 확인하고, 어긋나면 넣지 않는다.
+    앞선 일에 배정한 시간을 빼고 남는 만큼만 뒤의 일에 줄 수 있다.
+    예상 시간보다 적게 배정되면 그만큼이 '부족한 시간'이다.
     """
     overdue = [t for t in tasks if available_minutes(now, t.deadline, daily_minutes) <= 0]
-    active = [t for t in tasks if t not in overdue and t.units]
-    active.sort(key=lambda t: (t.deadline, not t.important, t.id))
-    avail = {t.id: available_minutes(now, t.deadline, daily_minutes) for t in active}
+    active = sorted((t for t in tasks if t not in overdue),
+                    key=lambda t: (t.deadline, not t.important, t.id))
 
-    picked: list[tuple[int, int]] = []  # (그 일의 쓸 수 있는 시간, 배정한 분)
-
-    def fits(trial: list[tuple[int, int]]) -> bool:
-        for limit, _ in trial:
-            if sum(m for lim, m in trial if lim <= limit) > limit:
-                return False
-        return True
-
-    assigned: dict[int, set[int]] = {t.id: set() for t in active}
-    for phase_required in (True, False):
-        for t in active:
-            for u in sorted(t.units, key=lambda x: x.order):
-                if u.required != phase_required:
-                    continue
-                trial = picked + [(avail[t.id], u.minutes)]
-                if fits(trial):
-                    picked = trial
-                    assigned[t.id].add(u.id)
-
-    result_tasks = []
-    order_to_do = []
-    short_any = False
+    used = 0
+    order = []
+    free = None
     for t in active:
-        units = sorted(t.units, key=lambda x: x.order)
-        must = [u for u in units if u.required and u.id in assigned[t.id]]
-        extra = [u for u in units if not u.required and u.id in assigned[t.id]]
-        short = [u for u in units if u.required and u.id not in assigned[t.id]]
-        dropped = [u for u in units if not u.required and u.id not in assigned[t.id]]
-        short_any = short_any or bool(short)
-        order_to_do += [(t, u) for u in must]
-        result_tasks.append({
+        avail = available_minutes(now, t.deadline, daily_minutes)
+        assigned = max(0, min(t.estimated_minutes, avail - used))
+        used += assigned
+        slack = avail - used
+        free = slack if free is None else min(free, slack)
+        order.append({
             "task_id": t.id,
             "name": t.name,
             "deadline": t.deadline.isoformat(),
             "important": t.important,
-            "available_minutes": avail[t.id],
-            "must": [_unit_dict(u) for u in must],
-            "extra": [_unit_dict(u) for u in extra],
-            "short_required": [_unit_dict(u) for u in short],
-            "dropped": [_unit_dict(u) for u in dropped],
+            "estimated_minutes": t.estimated_minutes,
+            "minutes_until_deadline": int((t.deadline - now).total_seconds() // 60),
+            "assigned_minutes": assigned,
+            "short_minutes": t.estimated_minutes - assigned,
         })
-    for t in active:
-        order_to_do += [(t, u) for u in sorted(t.units, key=lambda x: x.order)
-                        if not u.required and u.id in assigned[t.id]]
+    if free is not None:
+        free = max(free, 0)
 
-    if active:
-        free = min(
-            avail[t.id] - sum(m for lim, m in picked if lim <= avail[t.id])
-            for t in active
-        )
-    else:
-        free = None
-
-    if short_any:
-        status = "short"      # 필수 단위도 다 못 함
+    short = [o for o in order if o["short_minutes"] > 0]
+    if short:
+        status = "short"   # 예상 시간을 다 못 쓰는 일이 있음
     elif free is not None and free < 30:
-        status = "tight"      # 여유 30분 미만
+        status = "tight"   # 여유 30분 미만
     else:
         status = "ok"
 
-    next_unit = None
-    if order_to_do:
-        t, u = order_to_do[0]
-        next_unit = {"task_id": t.id, "task_name": t.name, **_unit_dict(u)}
+    now_task = next((o for o in order if o["assigned_minutes"] > 0), None)
+    start_by = (now + timedelta(minutes=free)).isoformat() if free is not None and not short else None
 
     return {
         "now": now.isoformat(),
         "status": status,
-        "planned_minutes": sum(m for _, m in picked),
-        "free_minutes": free,
-        "next_unit": next_unit,
-        "tasks": result_tasks,
+        "now_task": now_task,          # 지금 할 일
+        "order": order,                # 해야 할 순서
+        "free_minutes": free,          # 지금 딴짓해도 계획이 그대로인 시간
+        "start_by": start_by,          # 이 시각까지 시작하면 모든 일을 예상 시간만큼 할 수 있음
         "overdue": [{"task_id": t.id, "name": t.name, "deadline": t.deadline.isoformat()}
                     for t in overdue],
     }
 
 
-def _lost_ids(plan: dict) -> set[int]:
-    return {u["id"] for t in plan["tasks"] for u in t["short_required"] + t["dropped"]} | {
-        -t["task_id"] for t in plan["overdue"]  # 마감이 지난 일은 음수 id로 구분
-    }
-
-
-def newly_lost(before: dict, after: dict) -> list[dict]:
-    """before 계획에서는 할 수 있었는데 after에서는 못 하게 된 단위 목록."""
-    gone = _lost_ids(after) - _lost_ids(before)
-    out = []
-    for t in after["tasks"]:
-        for kind in ("short_required", "dropped"):
-            for u in t[kind]:
-                if u["id"] in gone:
-                    out.append({"task_id": t["task_id"], "task_name": t["name"],
-                                "required": u["required"], **u})
-    for t in after["overdue"]:
-        if -t["task_id"] in gone:
-            out.append({"task_id": t["task_id"], "task_name": t["name"], "overdue": True})
+def _shortages(plan: dict) -> dict[int, int]:
+    out = {o["task_id"]: o["short_minutes"] for o in plan["order"]}
+    out.update({o["task_id"]: -1 for o in plan["overdue"]})  # -1 = 마감 지남
     return out
 
 
 def wasted_preview(tasks: list[Task], now: datetime, wasted_minutes: int,
                    daily_minutes: int = 480) -> dict:
-    """'시간 날렸어': 날린 시간 전(now - wasted)과 지금의 계획을 비교한다."""
+    """고해성사: 날린 시간 전(now - wasted)과 지금의 계획을 비교한다."""
     before = build_plan(tasks, now - timedelta(minutes=wasted_minutes), daily_minutes)
     after = build_plan(tasks, now, daily_minutes)
-    return {"wasted_minutes": wasted_minutes, "newly_lost": newly_lost(before, after), "plan": after}
-
-
-def switch_preview(tasks: list[Task], now: datetime, minutes: int,
-                   target_task_id: int | None = None, daily_minutes: int = 480) -> dict:
-    """'다른 거 할래': minutes 동안 다른 걸 하면 계획이 어떻게 바뀌는지 미리 보여준다.
-
-    target_task_id가 있으면 그 시간을 해당 일의 단위를 순서대로 진행한 것으로 친다.
-    없으면 딴짓으로 보고 아무 일도 진행되지 않은 것으로 친다.
-    """
-    before = build_plan(tasks, now, daily_minutes)
-    sim = copy.deepcopy(tasks)
-    if target_task_id is not None:
-        left = minutes
-        for t in sim:
-            if t.id != target_task_id:
-                continue
-            remaining = []
-            for u in sorted(t.units, key=lambda x: x.order):
-                if left >= u.minutes:
-                    left -= u.minutes          # 이 단위는 끝난 것으로 본다
-                    continue
-                u.minutes -= left              # 일부만 진행
-                left = 0
-                remaining.append(u)
-            t.units = remaining
-    after = build_plan(sim, now + timedelta(minutes=minutes), daily_minutes)
+    b, a = _shortages(before), _shortages(after)
+    impacts = []
+    for o in after["order"]:
+        extra = o["short_minutes"] - b.get(o["task_id"], 0)
+        if extra > 0:
+            impacts.append({"task_id": o["task_id"], "name": o["name"],
+                            "lost_minutes": extra, "short_minutes": o["short_minutes"]})
+    for o in after["overdue"]:
+        if b.get(o["task_id"]) != -1:
+            impacts.append({"task_id": o["task_id"], "name": o["name"], "overdue": True})
     return {
-        "minutes": minutes,
-        "target_task_id": target_task_id,
-        "safe_minutes": before["free_minutes"],
-        "is_safe": not newly_lost(before, after),
-        "newly_lost": newly_lost(before, after),
-        "plan_after": after,
+        "wasted_minutes": wasted_minutes,
+        "now_task_changed": (before["now_task"] or {}).get("task_id") != (after["now_task"] or {}).get("task_id"),
+        "impacts": impacts,           # 날린 시간 때문에 시간이 모자라게 된 일
+        "plan": after,
     }

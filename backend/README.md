@@ -1,7 +1,7 @@
 # 바꿔도 돼? 백엔드
 
-남은 시간에 맞춰 **꼭 해야 할 최소한의 일**을 계산하는 FastAPI 서버.
-DB는 SQLite 파일 하나(`bakkwodo.db`)라 따로 띄울 필요가 없다.
+할 일을 자연어로 받아서, 남은 시간 기준으로 **지금 무엇을 할지**를 정해주는 FastAPI 서버.
+일(과목) 단위로 계산하며, 일 안의 내용은 쪼개지 않는다. DB는 SQLite 파일 하나(`bakkwodo.db`)다.
 
 ## 실행
 
@@ -10,7 +10,7 @@ cd backend
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-python -m pytest -q                # 테스트 20개 통과 확인
+python -m pytest -q                # 테스트 16개 통과 확인
 uvicorn app.main:app --reload      # http://127.0.0.1:8000/docs 에서 바로 호출해 볼 수 있다
 ```
 
@@ -24,118 +24,97 @@ uvicorn app.main:app --reload      # http://127.0.0.1:8000/docs 에서 바로 �
 
 ## 프론트 연동 규칙
 
-- **로그인 없음.** 처음 접속할 때 `crypto.randomUUID()`로 ID를 만들어 localStorage에 저장하고, 모든 요청에 `X-User-Id` 헤더로 보낸다.
-- **시간은 ISO 8601.** 시간대를 빼고 보내면 한국 시간으로 본다. 예: `2026-11-11T23:59:00`
-- **`now`는 시연용.** 비우면 서버 시각. 쿼리스트링에 `+09:00`을 넣을 땐 `encodeURIComponent`로 감싸야 한다(`+`가 공백으로 바뀜).
-- 완료한 단위는 계획에서 빠진다. 계획은 저장하지 않고 요청할 때마다 다시 계산한다.
+- **로그인 없음.** 처음 실행할 때 UUID를 만들어 저장하고, 모든 요청에 `X-User-Id` 헤더로 보낸다.
+- **시간은 ISO 8601.** 시간대를 빼고 보내면 한국 시간으로 본다. 예: `2026-11-11T18:00:00`
+- **`now`는 시연용.** 비우면 서버 시각. 쿼리스트링에 `+09:00`을 넣을 땐 `encodeURIComponent`로 감싼다.
+- 완료한 일은 계획에서 빠진다. 계획은 저장하지 않고 요청할 때마다 다시 계산한다.
+- 진행 시간은 기록하지 않는다(MVP). 일이 끝나면 완료 체크만 한다.
 
 ## API
 
 | 메서드 | 경로 | 하는 일 |
 | --- | --- | --- |
 | GET | `/health` | 서버 확인 |
-| POST | `/tasks/parse` | 자연어 한 줄 → 할 일 초안 (저장 안 함) |
-| POST | `/tasks` | 일 등록 |
-| GET | `/tasks` | 내 일 목록(단위 포함) |
-| GET / PATCH / DELETE | `/tasks/{id}` | 일 조회, 수정, 삭제 |
-| PATCH | `/units/{id}` | 단위 완료 체크 `{"done": true}` |
-| GET | `/plan?now=` | 현재 계획 (**핵심**) |
-| POST | `/plan/wasted` | 시간 날렸어 |
-| POST | `/plan/switch` | 다른 거 할래 |
+| POST | `/tasks/parse` | 자연어 목록 → 할 일 초안 (저장 안 함) |
+| POST | `/tasks/batch` | 초안 여러 개를 한 번에 저장 |
+| POST | `/tasks` | 일 하나 저장 |
+| GET | `/tasks?include_done=true` | 내 일 목록 |
+| GET / PATCH / DELETE | `/tasks/{id}` | 일 조회, 수정(완료 체크 포함), 삭제 |
+| GET | `/plan?now=` | 지금 할 일과 순서 (**핵심**) |
+| POST | `/plan/wasted` | 고해성사 |
 | GET / PUT | `/settings` | 내일 이후 하루 사용 시간(기본 480분) |
 
-### POST /tasks/parse (자연어 등록)
+### 1. 자연어 등록: POST /tasks/parse → POST /tasks/batch
 
 ```json
-{"text": "물리 과제 내일 밤 12시까지 5문제, 중요해"}
+{"text": "물리 과제 오늘 오후 10시까지\nINVIBE 최종 시연 내일 오후 6시까지"}
 ```
 
 응답:
 
 ```json
 {
-  "draft": {
-    "name": "물리 과제",
-    "deadline": "2026-11-11T23:59:00+09:00",
-    "important": true,
-    "units": [{"name": "1번", "minutes": 20, "required": true}]
-  },
-  "assumptions": ["문제당 20분으로 추정"]
-}
-```
-
-흐름: 사용자가 한 줄 입력 → `/tasks/parse` → 확인 화면에서 `draft`와 `assumptions`를 보여주고 수정받기 → 확정하면 `draft`를 그대로 `POST /tasks`로 보낸다.
-- `503`: 서버에 API 키가 없음 → 직접 입력 폼으로 넘기기
-- `422`: AI가 문장을 이해하지 못함 → 다시 입력하거나 직접 입력 폼으로 넘기기
-
-### POST /tasks
-
-```json
-{
-  "name": "물리 과제",
-  "deadline": "2026-11-11T23:59:00",
-  "important": true,
-  "units": [
-    {"name": "1번", "minutes": 20, "required": true},
-    {"name": "4번", "minutes": 20}
-  ]
-}
-```
-
-필수(`required`)를 하나도 고르지 않으면 앞에서부터 절반(올림)을 필수로 정한다.
-`PATCH /tasks/{id}`에 `units`를 보내면 단위 목록이 통째로 바뀐다.
-
-### GET /plan 응답
-
-```json
-{
-  "status": "short",
-  "planned_minutes": 20,
-  "free_minutes": 0,
-  "next_unit": {"task_id": 1, "task_name": "물리 과제", "id": 11, "name": "1번", "minutes": 20, "required": true},
-  "tasks": [
-    {
-      "task_id": 1, "name": "물리 과제", "deadline": "...", "important": true,
-      "available_minutes": 20,
-      "must": [],
-      "extra": [],
-      "short_required": [],
-      "dropped": []
-    }
+  "drafts": [
+    {"name": "물리 과제", "deadline": "2026-11-10T22:00:00+09:00", "important": false, "estimated_minutes": 120},
+    {"name": "INVIBE 최종 시연", "deadline": "2026-11-11T18:00:00+09:00", "important": false, "estimated_minutes": 240}
   ],
+  "assumptions": ["물리 과제: 2시간으로 추정", "INVIBE 최종 시연: 4시간으로 추정"]
+}
+```
+
+확인 화면에서 `drafts`와 `assumptions`를 보여주고 예상 시간 등을 고치게 한 뒤, 확정하면
+`{"tasks": drafts}`를 `POST /tasks/batch`로 보낸다.
+- `503`: 서버에 API 키가 없음 → 직접 입력 폼으로
+- `422`: AI가 문장을 이해하지 못함 → 다시 입력하거나 직접 입력 폼으로
+
+`POST /tasks`(하나 저장)의 본문은 draft 하나와 같은 모양이다. `estimated_minutes`를 빼면 60분.
+
+### 2. 완료 체크: PATCH /tasks/{id}
+
+```json
+{"done": true}
+```
+
+이름, 마감, 중요, 예상 시간도 같은 API로 고친다.
+
+### 3. 계획: GET /plan
+
+```json
+{
+  "status": "ok",
+  "now_task": {
+    "task_id": 1, "name": "물리 과제", "deadline": "2026-11-10T22:00:00+09:00",
+    "important": false, "estimated_minutes": 120,
+    "minutes_until_deadline": 300, "assigned_minutes": 120, "short_minutes": 0
+  },
+  "order": [ /* now_task와 같은 모양, 해야 할 순서대로 */ ],
+  "free_minutes": 180,
+  "start_by": "2026-11-10T20:00:00+09:00",
   "overdue": []
 }
 ```
 
-- `status`: `ok`(여유 30분 이상) · `tight`(여유 30분 미만) · `short`(필수도 다 못 함)
-- `must`: 지금 꼭 할 것 / `extra`: 여유 되면 할 것
-- `short_required`: **필수인데 시간이 부족해서 못 하는 것** (빨간색으로 강조)
-- `dropped`: 오늘은 포기하는 선택 단위
-- `free_minutes`: 지금 딴짓해도 계획이 그대로인 시간
-- `next_unit`: 지금 바로 할 단위
+- `now_task`: **지금 할 일** ("지금은 물리를 하세요")
+- `order`: 해야 할 순서. `short_minutes`가 0보다 크면 그만큼 시간이 부족하다
+- `status`: `ok`(여유 30분 이상) · `tight`(여유 30분 미만) · `short`(시간이 모자란 일이 있음)
+- `free_minutes`: 지금 딴짓해도 모든 일을 예상 시간만큼 할 수 있는 시간
+- `start_by`: 이 시각까지만 시작하면 됨 (`short`이면 `null`)
+- `overdue`: 마감이 지난 일
 
-### POST /plan/wasted
-
-```json
-{"wasted_minutes": 30, "done_unit_ids": [11, 12]}
-```
-
-끝낸 단위를 체크한 뒤 계획을 다시 계산한다. 응답의 `newly_lost`는 날린 시간 때문에 **새로** 못 하게 된 단위, `plan`은 새 계획(`/plan`과 같은 모양).
-
-### POST /plan/switch
+### 4. 고해성사: POST /plan/wasted
 
 ```json
-{"minutes": 40, "target_task_id": null}
+{"wasted_minutes": 60, "done_task_ids": []}
 ```
 
-- `target_task_id`가 비어 있으면 딴짓, 있으면 그 일을 진행한 것으로 계산한다.
-- 응답: `safe_minutes`(괜찮은 시간), `is_safe`, `newly_lost`(넘기면 못 하게 되는 단위), `plan_after`
+- `impacts`: 딴짓 때문에 시간이 모자라게 된 일과 줄어든 시간(`lost_minutes`)
+- `now_task_changed`: 지금 할 일이 바뀌었는지
+- `plan`: 새 계획 (`/plan`과 같은 모양)
 
 ## 계산 규칙
 
-1. 마감까지 쓸 수 있는 시간: 오늘 마감은 남은 시간 전부, 내일 이후는 오늘 남은 시간 + 하루 `daily_minutes`씩(실제 남은 시간을 넘지 않음)
-2. 마감이 빠른 순, 같으면 중요 표시 순으로 정렬
-3. 필수 단위부터, 그다음 나머지 단위를 하나씩 넣되 **모든 마감에서 "그 마감까지 배정한 시간 ≤ 쓸 수 있는 시간"** 을 지킬 때만 넣는다
-4. 못 넣은 필수 단위는 `short_required`, 못 넣은 선택 단위는 `dropped`
+1. 마감까지 쓸 수 있는 시간: 오늘 마감은 남은 시간 전부, 내일 이후는 오늘 남은 시간 + 하루 `daily_minutes`씩 (실제 남은 시간을 넘지 않음)
+2. 마감이 빠른 순, 같으면 중요 표시 순으로 정렬. 맨 앞이 `now_task`
+3. 앞선 일에 배정한 시간을 빼고 남는 만큼만 뒤의 일에 배정. 예상 시간보다 모자라면 `short_minutes`
 
 `app/planner.py`가 이 계산만 담당하고 DB와 분리돼 있어서 `tests/test_planner.py`로 바로 검증할 수 있다.
