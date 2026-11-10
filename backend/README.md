@@ -6,17 +6,21 @@ DB는 SQLite 파일 하나(`bakkwodo.db`)라 따로 띄울 필요가 없다.
 ## 실행
 
 ```bash
-cd bakkwodo-backend
+cd backend
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-python -m pytest -q                # 테스트 15개 통과 확인
+python -m pytest -q                # 테스트 20개 통과 확인
 uvicorn app.main:app --reload      # http://127.0.0.1:8000/docs 에서 바로 호출해 볼 수 있다
 ```
 
 시연 데이터: `python -m scripts.seed_demo demo-user`
 
-환경변수: `DB_PATH`(기본 `bakkwodo.db`), `CORS_ORIGINS`(기본 `*`, 배포 후 프론트 주소로 바꾸기)
+환경변수
+- `DB_PATH`: 기본 `bakkwodo.db`
+- `CORS_ORIGINS`: 기본 `*`
+- `ANTHROPIC_API_KEY`: 자연어 등록(`/tasks/parse`)에 필요. 없으면 그 API만 503을 돌려주고 나머지는 정상 동작
+- `LLM_MODEL`: 기본 `claude-haiku-5-5`
 
 ## 프론트 연동 규칙
 
@@ -30,6 +34,7 @@ uvicorn app.main:app --reload      # http://127.0.0.1:8000/docs 에서 바로 �
 | 메서드 | 경로 | 하는 일 |
 | --- | --- | --- |
 | GET | `/health` | 서버 확인 |
+| POST | `/tasks/parse` | 자연어 한 줄 → 할 일 초안 (저장 안 함) |
 | POST | `/tasks` | 일 등록 |
 | GET | `/tasks` | 내 일 목록(단위 포함) |
 | GET / PATCH / DELETE | `/tasks/{id}` | 일 조회, 수정, 삭제 |
@@ -38,6 +43,30 @@ uvicorn app.main:app --reload      # http://127.0.0.1:8000/docs 에서 바로 �
 | POST | `/plan/wasted` | 시간 날렸어 |
 | POST | `/plan/switch` | 다른 거 할래 |
 | GET / PUT | `/settings` | 내일 이후 하루 사용 시간(기본 480분) |
+
+### POST /tasks/parse (자연어 등록)
+
+```json
+{"text": "물리 과제 내일 밤 12시까지 5문제, 중요해"}
+```
+
+응답:
+
+```json
+{
+  "draft": {
+    "name": "물리 과제",
+    "deadline": "2026-11-11T23:59:00+09:00",
+    "important": true,
+    "units": [{"name": "1번", "minutes": 20, "required": true}]
+  },
+  "assumptions": ["문제당 20분으로 추정"]
+}
+```
+
+흐름: 사용자가 한 줄 입력 → `/tasks/parse` → 확인 화면에서 `draft`와 `assumptions`를 보여주고 수정받기 → 확정하면 `draft`를 그대로 `POST /tasks`로 보낸다.
+- `503`: 서버에 API 키가 없음 → 직접 입력 폼으로 넘기기
+- `422`: AI가 문장을 이해하지 못함 → 다시 입력하거나 직접 입력 폼으로 넘기기
 
 ### POST /tasks
 

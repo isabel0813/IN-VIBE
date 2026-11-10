@@ -8,8 +8,8 @@ from typing import Iterator
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import db, planner
-from .schemas import SettingsIn, SwitchIn, TaskCreate, TaskUpdate, UnitDone, WastedIn
+from . import db, nlp, planner
+from .schemas import ParseIn, SettingsIn, SwitchIn, TaskCreate, TaskUpdate, UnitDone, WastedIn
 
 app = FastAPI(title="바꿔도 돼? API", version="0.1.0")
 
@@ -57,6 +57,17 @@ def write_settings(body: SettingsIn, user: str = Depends(get_user), conn=Depends
 
 
 # ---------- 일 ----------
+
+@app.post("/tasks/parse")
+def parse_task(body: ParseIn, user: str = Depends(get_user)):
+    """자연어 한 줄 → 할 일 초안. 저장하지 않는다. 사용자가 확인한 draft를 POST /tasks로 보낸다."""
+    try:
+        return nlp.parse_task_text(body.text, resolve_now(body.now))
+    except nlp.NotConfigured as e:
+        raise HTTPException(503, str(e))
+    except nlp.ParseError as e:
+        raise HTTPException(422, str(e))
+
 
 @app.post("/tasks", status_code=201)
 def create_task(body: TaskCreate, user: str = Depends(get_user), conn=Depends(get_conn)):

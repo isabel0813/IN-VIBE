@@ -42,5 +42,10 @@ class SwitchIn(BaseModel):
     now: datetime | None = None
 
 
+class ParseIn(BaseModel):
+    text: str = Field(min_length=1, max_length=500, description="예: 물리 과제 내일 밤 12시까지, 5문제")
+    now: datetime | None = Field(None, description="시연용 현재 시각. 비우면 서버 시각")
+
+
 class SettingsIn(BaseModel):
     daily_minutes: int = Field(ge=60, le=1440, description="내일 이후 하루에 쓸 수 있는 시간(분)")
