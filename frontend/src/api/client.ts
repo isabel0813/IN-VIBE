@@ -2,7 +2,7 @@ import type { ParsedTasks, Plan, Settings, Task, TaskDraft } from "./types";
 
 export const USER_ID_KEY = "in-vibe.user-id";
 const baseUrl = (
-  import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000"
+  import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8010"
 ).replace(/\/+$/, "");
 
 export function getUserId(): string {

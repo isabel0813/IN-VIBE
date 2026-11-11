@@ -14,10 +14,10 @@ npm.cmd run dev
 
 브라우저에서 터미널에 표시된 주소(기본 `http://127.0.0.1:5173`)를 엽니다. macOS/Linux에서는 `npm.cmd` 대신 `npm`을 사용합니다. Windows에서 PowerShell 실행 정책으로 `npm.ps1`이 차단될 때도 `npm.cmd`로 실행할 수 있습니다.
 
-백엔드는 별도 터미널에서 [기존 실행 안내](../backend/README.md)에 따라 실행합니다. 기본 연결 주소는 `http://127.0.0.1:8000`입니다. 백엔드 주소를 바꾸려면 `.env.example`을 `.env.local`로 복사해 수정한 뒤 Vite를 재시작합니다.
+백엔드는 별도 터미널에서 [기존 실행 안내](../backend/README.md)에 따라 `--port 8010`으로 실행합니다. Windows의 8000 포트 충돌을 피하도록 기본 연결 주소는 `http://127.0.0.1:8010`입니다. 백엔드 주소를 바꾸려면 `.env.example`을 `.env.local`로 복사해 수정한 뒤 Vite를 재시작합니다. `.env.local`은 Git에서 제외됩니다. Windows Python에는 `tzdata`가 필요합니다(백엔드 의존성 목록 반영은 백엔드 담당자와 협의).
 
 ```dotenv
-VITE_API_BASE_URL=http://127.0.0.1:8000
+VITE_API_BASE_URL=http://127.0.0.1:8010
 ```
 
 `VITE_` 환경변수는 클라이언트 번들에 포함됩니다. 비밀 키를 넣지 마세요. 다른 기기에서 접속할 때에는 해당 기기에서 접근 가능한 백엔드 주소와 백엔드 `CORS_ORIGINS` 설정이 필요합니다. 빌드 후에는 환경변수 변경 시 다시 빌드해야 합니다.
