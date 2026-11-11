@@ -3,3 +3,6 @@
 coverage/
 *.log
 .qa/
+.tools/
+src-tauri/target/
+src-tauri/gen/schemas/

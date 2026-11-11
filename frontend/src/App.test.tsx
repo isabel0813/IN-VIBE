@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import App from "./App";
 import type { Plan, Task } from "./api/types";
+import { sessionStore } from "./session/store";
 
 const draft = {
   name: "발표 준비",
@@ -41,6 +42,7 @@ const planFor = (): Plan => {
 };
 
 beforeEach(() => {
+  void sessionStore.send({ type: "end" });
   localStorage.clear();
   tasks = [];
   parseStatus = 200;
@@ -131,7 +133,12 @@ describe("Phase 1 user flows", () => {
     });
     fireEvent.click(start);
     expect(screen.getByText("지금은, 이 일에 집중해요.")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "작업 완료" }));
+    const complete = screen.getByRole("button", { name: "작업 완료" });
+    await waitFor(() =>
+      expect((complete as HTMLButtonElement).disabled).toBe(false),
+    );
+    expect(screen.getByLabelText("안뇽이 웹 미리보기")).toBeTruthy();
+    fireEvent.click(complete);
     await screen.findByText("등록한 일을 모두 마쳤어요.");
     const checkbox = screen.getByRole("checkbox", {
       name: "최종 발표 준비 완료",

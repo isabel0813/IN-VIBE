@@ -11,6 +11,10 @@ import type { EditableDraft } from "./lib/drafts";
 import DraftEditor from "./components/DraftEditor";
 import PlanView from "./components/PlanView";
 import Icon from "./components/Icon";
+import { sessionStore, useFocusSession } from "./session/store";
+import { isDesktop, onNavigate, showWidget } from "./desktop/bridge";
+import { WebWidgetPreview } from "./widget/Widget";
+import DevControls from "./widget/DevControls";
 
 type Step = "input" | "review" | "plan";
 const example =
@@ -36,13 +40,21 @@ export default function App() {
   const [formError, setFormError] = useState("");
   const [notice, setNotice] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [activeId, setActiveId] = useState<number | null>(null);
+  const {
+    session,
+    ready: sessionReady,
+    error: sessionError,
+  } = useFocusSession();
+  const activeId = session.running ? (session.task?.id ?? null) : null;
+  const [sessionBusy, setSessionBusy] = useState(false);
+  const sessionLock = useRef(false);
   const requestVersion = useRef(0);
   const parseController = useRef<AbortController | null>(null);
-  const busy = saving || refreshing;
+  const busy = saving || refreshing || sessionBusy;
 
   const refresh = useCallback(async (initial = false) => {
     const version = ++requestVersion.current;
+    const sessionRevision = sessionStore.getSnapshot().session.revision;
     setRefreshing(true);
     try {
       const [nextTasks, nextPlan, nextSettings] = await Promise.all([
@@ -55,9 +67,28 @@ export default function App() {
       setPlan(nextPlan);
       setSettings(nextSettings);
       setConnectionError("");
-      setActiveId((id) =>
-        nextTasks.some((task) => task.id === id && !task.done) ? id : null,
-      );
+      const current = sessionStore.getSnapshot().session;
+      if (
+        current.running &&
+        current.task &&
+        current.revision === sessionRevision
+      ) {
+        const task = nextTasks.find((item) => item.id === current.task?.id);
+        const action = !task
+          ? { type: "end" as const }
+          : task.done
+            ? { type: "complete" as const, task_id: task.id }
+            : task.name !== current.task.name
+              ? {
+                  type: "rename" as const,
+                  task: { id: task.id, name: task.name },
+                }
+              : null;
+        if (action)
+          void sessionStore
+            .send(action)
+            .catch((error) => setNotice(errorMessage(error)));
+      }
       if (initial && nextTasks.length) setStep("plan");
     } catch (error) {
       if (version === requestVersion.current) {
@@ -71,6 +102,53 @@ export default function App() {
       }
     }
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let dispose: (() => void) | undefined;
+    void onNavigate((target) => {
+      setStep(target);
+      setNotice("");
+      if (target === "plan") void refresh();
+    })
+      .then((unlisten) => {
+        if (cancelled) unlisten();
+        else dispose = unlisten;
+      })
+      .catch((error) =>
+        setNotice(`화면 연결을 준비하지 못했어요. ${String(error)}`),
+      );
+    return () => {
+      cancelled = true;
+      dispose?.();
+    };
+  }, [refresh]);
+
+  async function startSession(id: number | null) {
+    if (sessionLock.current || !sessionReady) return;
+    sessionLock.current = true;
+    setSessionBusy(true);
+    try {
+      if (id === null) await sessionStore.send({ type: "end" });
+      else {
+        const task = tasks.find((item) => item.id === id && !item.done);
+        if (!task)
+          throw new Error(
+            "시작할 작업을 찾지 못했어요. 계획을 새로고침해 주세요.",
+          );
+        await sessionStore.send({
+          type: "start",
+          task: { id: task.id, name: task.name },
+        });
+        await showWidget(true);
+      }
+    } catch (error) {
+      setNotice(`집중 세션 또는 위젯을 확인해 주세요. ${String(error)}`);
+    } finally {
+      sessionLock.current = false;
+      setSessionBusy(false);
+    }
+  }
 
   useEffect(() => {
     void refresh(true);
@@ -177,7 +255,8 @@ export default function App() {
       setTasks((previous) =>
         previous.map((item) => (item.id === task.id ? updated : item)),
       );
-      if (updated.done && activeId === task.id) setActiveId(null);
+      if (updated.done && activeId === task.id)
+        await sessionStore.send({ type: "complete", task_id: task.id });
       setPlan(null);
       setNotice(
         updated.done
@@ -281,6 +360,46 @@ export default function App() {
           </div>
         </header>
         <main id="main-content">
+          <div className="desktop-session-bar">
+            <span>
+              {isDesktop()
+                ? "안뇽이 데스크톱"
+                : "안뇽이 웹 미리보기 · OS 창 제어 없음"}
+            </span>
+            {session.running && (
+              <span>
+                {session.paused ? "일시정지" : "집중 중"} · {session.task?.name}
+              </span>
+            )}
+            <button
+              disabled={sessionBusy || !sessionReady}
+              onClick={() =>
+                void showWidget().catch((error) => setNotice(String(error)))
+              }
+            >
+              {isDesktop() ? "안뇽이 표시" : "위젯 미리보기"}
+            </button>
+            {session.running && (
+              <button
+                disabled={sessionBusy}
+                onClick={() =>
+                  void showWidget(true).catch((error) =>
+                    setNotice(String(error)),
+                  )
+                }
+              >
+                {isDesktop() ? "위젯으로 돌아가기" : "미리보기 열기"}
+              </button>
+            )}
+            {sessionError && (
+              <span className="session-error" role="alert">
+                {sessionError}
+                <button onClick={() => void sessionStore.sync()}>
+                  다시 동기화
+                </button>
+              </span>
+            )}
+          </div>
           <ol className="steps" aria-label="진행 단계">
             {[
               ["input", "할 일 입력"],
@@ -462,9 +581,10 @@ export default function App() {
               tasks={tasks}
               plan={plan}
               settings={settings}
-              busy={busy}
+              busy={busy || !sessionReady}
               activeId={activeId}
-              onStart={setActiveId}
+              paused={session.paused}
+              onStart={(id) => void startSession(id)}
               onDone={(task) => void toggleDone(task)}
               onAdd={addTasks}
               onEdit={(task) => {
@@ -478,6 +598,8 @@ export default function App() {
             />
           )}
         </main>
+        {import.meta.env.DEV && <DevControls />}
+        {!isDesktop() && <WebWidgetPreview />}
         <footer className="app-footer">
           <span>바꿔도 돼?</span>작은 시작이, 하루를 바꾸니까.
         </footer>

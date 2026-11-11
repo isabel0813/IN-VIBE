@@ -8,6 +8,7 @@ interface Props {
   settings: Settings | null;
   busy: boolean;
   activeId: number | null;
+  paused?: boolean;
   onStart: (id: number | null) => void;
   onDone: (task: Task) => void;
   onEdit: (task: Task) => void;
@@ -20,6 +21,7 @@ export default function PlanView({
   settings,
   busy,
   activeId,
+  paused = false,
   onStart,
   onDone,
   onEdit,
@@ -48,7 +50,11 @@ export default function PlanView({
         <div>
           <span className="eyebrow">YOUR NEXT STEP</span>
           <h1>
-            {active ? "지금은, 이 일에 집중해요." : "하나씩 하면, 괜찮아요."}
+            {active
+              ? paused
+                ? "잠깐 쉬어도 괜찮아요."
+                : "지금은, 이 일에 집중해요."
+              : "하나씩 하면, 괜찮아요."}
           </h1>
           <p>남은 시간에 맞춰 정리했어요. 지금 할 일부터 시작해 보세요.</p>
         </div>
@@ -68,7 +74,11 @@ export default function PlanView({
             <section className={`focus-card ${active ? "is-active" : ""}`}>
               <div className="focus-label">
                 <span className="live-dot" />
-                {active ? "집중 중" : "지금 가장 먼저 할 일"}
+                {active
+                  ? paused
+                    ? "일시정지"
+                    : "집중 중"
+                  : "지금 가장 먼저 할 일"}
                 <span className="focus-tag">
                   {featured.important ? "중요한 작업" : "한 번에 한 가지"}
                 </span>
@@ -91,7 +101,11 @@ export default function PlanView({
                 </p>
                 {active ? (
                   <div className="button-group">
-                    <button className="secondary" onClick={() => onStart(null)}>
+                    <button
+                      className="secondary"
+                      disabled={busy}
+                      onClick={() => onStart(null)}
+                    >
                       집중 종료
                     </button>
                     <button
@@ -116,8 +130,8 @@ export default function PlanView({
               </div>
               {active && (
                 <p className="focus-note">
-                  집중 상태는 이 화면에서만 유지돼요. 소요시간은 자동으로
-                  기록하지 않아요.
+                  안뇽이와 같은 집중 세션을 보고 있어요. 앱을 종료하면 세션은
+                  끝나며, 활동이나 딴짓 시간은 측정하지 않아요.
                 </p>
               )}
             </section>
@@ -209,7 +223,9 @@ export default function PlanView({
                         <span className="badge danger">마감 지남</span>
                       )}
                       {activeId === task.id && !task.done && (
-                        <span className="badge">집중 중</span>
+                        <span className="badge">
+                          {paused ? "일시정지" : "집중 중"}
+                        </span>
                       )}
                     </div>
                     <p>

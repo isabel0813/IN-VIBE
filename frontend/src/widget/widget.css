@@ -1,0 +1,283 @@
+html.widget-page,
+.widget-page body,
+.widget-page #root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  background: transparent !important;
+  overflow: hidden;
+  color-scheme: dark;
+}
+.pet-stage {
+  font-family: "Segoe UI", "Malgun Gothic", sans-serif;
+  color: #e7efff;
+  user-select: none;
+  box-sizing: border-box;
+}
+.pet-stage * {
+  box-sizing: border-box;
+}
+.pet-stage.native {
+  position: relative;
+  overflow: hidden;
+}
+.pet-stage.web-preview {
+  position: fixed;
+  z-index: 100;
+  pointer-events: none;
+}
+.pet-character {
+  position: absolute;
+  width: 80px;
+  height: 80px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+  pointer-events: auto;
+}
+.pet-character:active {
+  cursor: grabbing;
+  transform: none !important;
+}
+.pet-character img {
+  display: block;
+  width: 80px;
+  height: 80px;
+  pointer-events: none;
+}
+.pet-character:focus-visible {
+  outline: 1px dashed #b8d6ff;
+  outline-offset: -5px;
+  border-radius: 20px;
+}
+.pet-state-dot {
+  position: absolute;
+  right: 10px;
+  bottom: 9px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #aec0dd;
+  border: 1px solid #233b65;
+}
+.state-focus .pet-state-dot {
+  background: #82d7ba;
+}
+.state-suspect .pet-state-dot,
+.state-checkin .pet-state-dot {
+  background: #f4cf87;
+}
+.state-complete .pet-state-dot {
+  background: #b3afff;
+}
+.pet-bubble {
+  position: absolute;
+  z-index: 2;
+  pointer-events: auto;
+  background: #182235;
+  border: 1px solid #53698d;
+  border-radius: 15px;
+  padding: 14px;
+  max-height: 344px;
+  overflow: auto;
+  scrollbar-width: thin;
+  box-shadow: 0 4px 12px #050b1429;
+  outline: none;
+}
+.pet-bubble button {
+  font: inherit;
+  cursor: pointer;
+  color: #c7d9f6;
+  border: 1px solid #3b5071;
+  background: #23334c;
+  border-radius: 6px;
+  padding: 7px 9px;
+  font-size: 11px;
+}
+.pet-bubble button:hover:not(:disabled) {
+  background: #324c70;
+}
+.pet-bubble button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.pet-bubble button:focus-visible {
+  outline: 2px solid #96beff;
+  outline-offset: 2px;
+}
+.pet-bubble-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+}
+.pet-bubble-heading strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.pet-bubble-heading small {
+  margin-left: 6px;
+  font-size: 10px;
+  font-weight: 400;
+  color: #96acd0;
+}
+.pet-bubble-heading button {
+  border: 0;
+  background: transparent;
+  font-size: 20px;
+  padding: 0 5px;
+  line-height: 1;
+}
+.pet-line {
+  font-size: 13px;
+  line-height: 1.7;
+  margin: 12px 0;
+  color: #ecf3ff;
+  word-break: keep-all;
+}
+.pet-current-task {
+  border-left: 2px solid #6d99d9;
+  margin: 0 0 12px;
+  padding: 2px 0 2px 9px;
+}
+.pet-current-task span {
+  display: block;
+  font-size: 9px;
+  color: #9db2d2;
+  margin-bottom: 4px;
+}
+.pet-current-task strong {
+  font-size: 12px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.pet-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  margin-top: 10px;
+}
+.pet-session-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 5px;
+  margin-top: 8px;
+}
+.pet-session-actions button {
+  font-size: 10px;
+  padding: 7px 5px;
+  background: transparent;
+}
+.pet-window-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-top: 1px solid #33435e;
+  padding-top: 10px;
+  margin-top: 11px;
+}
+.pet-window-actions span {
+  font-size: 9px;
+  color: #92a6c5;
+  margin-right: auto;
+}
+.pet-window-actions button {
+  font-size: 9px;
+  border: 0;
+  padding: 4px;
+  background: transparent;
+}
+.pet-simulation {
+  font-size: 10px;
+  color: #d7b883;
+  line-height: 1.6;
+  margin: 7px 0;
+}
+.checkin-options {
+  display: grid;
+  gap: 5px;
+}
+.checkin-options button {
+  text-align: left;
+}
+.pet-error {
+  font-size: 10px;
+  line-height: 1.7;
+  color: #efb5aa;
+  overflow-wrap: anywhere;
+  margin-top: 10px;
+}
+.pet-error button {
+  margin-left: 5px;
+}
+.pet-retry {
+  position: absolute;
+  bottom: 0;
+  font-size: 9px;
+  color: #ffd7b2;
+  background: #26344c;
+  border: 0;
+  pointer-events: auto;
+}
+.pet-dev-controls {
+  max-width: 938px;
+  margin: 0 auto 24px;
+  border: 1px dashed #3a506e;
+  border-radius: 8px;
+  padding: 12px 15px;
+  font-size: 11px;
+  color: #9eafca;
+}
+.pet-dev-controls summary {
+  cursor: pointer;
+}
+.pet-dev-controls p {
+  margin: 12px 0;
+  line-height: 1.7;
+}
+.pet-dev-controls > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.pet-dev-controls button {
+  background: #21314b;
+  color: #c2d5f4;
+  border: 1px solid #425779;
+  padding: 7px 9px;
+  border-radius: 5px;
+  font-size: 10px;
+}
+.pet-dev-controls button[aria-pressed="true"] {
+  border-color: #8cb8ff;
+}
+.desktop-session-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px 15px;
+  margin-bottom: 22px;
+  font-size: 11px;
+  color: #aabedb;
+}
+.desktop-session-bar button {
+  background: #243550;
+  color: #c0d7fa;
+  border: 1px solid #3c5378;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+}
+.desktop-session-bar .session-error {
+  width: 100%;
+  color: #efb5aa;
+}
+@media (max-width: 760px) {
+  .pet-dev-controls {
+    margin-inline: 22px;
+  }
+}
