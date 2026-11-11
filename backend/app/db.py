@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS settings (
     daily_minutes INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id);
+CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);
 """
 
 
@@ -152,6 +153,51 @@ def log_event(conn, user_id: str, type_: str, task_id: int | None = None,
     )
     if commit:
         conn.commit()
+
+
+def all_events(conn, since: datetime | None = None, until: datetime | None = None) -> list[dict]:
+    """지표 계산용: 모든 사용자의 이벤트."""
+    sql, args = "SELECT * FROM events WHERE 1=1", []
+    if since is not None:
+        sql += " AND created_at >= ?"
+        args.append(to_kst(since).isoformat())
+    if until is not None:
+        sql += " AND created_at < ?"
+        args.append(to_kst(until).isoformat())
+    rows = conn.execute(sql + " ORDER BY created_at, id", args).fetchall()
+    return [
+        {
+            "user_id": r["user_id"],
+            "type": r["type"],
+            "task_id": r["task_id"],
+            "payload": json.loads(r["payload"] or "{}"),
+            "created_at": to_kst(datetime.fromisoformat(r["created_at"])),
+        }
+        for r in rows
+    ]
+
+
+def all_tasks(conn, since: datetime | None = None, until: datetime | None = None) -> list[dict]:
+    """지표 계산용: 모든 사용자의 일 (생성 시각 기준으로 거른다)."""
+    sql, args = "SELECT * FROM tasks WHERE 1=1", []
+    if since is not None:
+        sql += " AND created_at >= ?"
+        args.append(to_kst(since).isoformat())
+    if until is not None:
+        sql += " AND created_at < ?"
+        args.append(to_kst(until).isoformat())
+    rows = conn.execute(sql, args).fetchall()
+    parse = lambda v: to_kst(datetime.fromisoformat(v)) if v else None  # noqa: E731
+    return [
+        {
+            "id": r["id"],
+            "user_id": r["user_id"],
+            "deadline": parse(r["deadline"]),
+            "created_at": parse(r["created_at"]),
+            "done_at": parse(r["done_at"]),
+        }
+        for r in rows
+    ]
 
 
 def planner_tasks(conn, user_id: str) -> list[planner.Task]:

@@ -37,5 +37,11 @@ class WastedIn(BaseModel):
     now: datetime | None = Field(None, description="시연용 현재 시각. 비우면 서버 시각")
 
 
+class EventIn(BaseModel):
+    type: str = Field(min_length=1, max_length=40, description="metrics.CLIENT_EVENTS 중 하나")
+    task_id: int | None = None
+    payload: dict = Field(default_factory=dict, description="작은 부가 정보. 개인정보·창 제목은 넣지 않는다")
+
+
 class SettingsIn(BaseModel):
     daily_minutes: int = Field(ge=60, le=1440, description="내일 이후 하루에 쓸 수 있는 시간(분)")

@@ -1,17 +1,23 @@
 """바꿔도 돼? 백엔드 API."""
 from __future__ import annotations
 
+import csv
+import hmac
+import io
+import json
 import os
 from datetime import datetime
 from typing import Iterator
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 
-from . import db, nlp, planner
-from .schemas import ParseIn, SettingsIn, TaskBatchCreate, TaskCreate, TaskUpdate, WastedIn
+from . import db, metrics, nlp, planner
+from .schemas import (EventIn, ParseIn, SettingsIn, TaskBatchCreate, TaskCreate, TaskUpdate,
+                      WastedIn)
 
-app = FastAPI(title="바꿔도 돼? API", version="0.2.0")
+app = FastAPI(title="바꿔도 돼? API", version="0.3.0")
 
 origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["*"], allow_headers=["*"])
@@ -28,6 +34,13 @@ def get_conn() -> Iterator:
 def get_user(x_user_id: str = Header(..., min_length=1, max_length=64)) -> str:
     """로그인 대신 기기마다 만든 임의 ID를 X-User-Id 헤더로 받는다."""
     return x_user_id
+
+
+def require_metrics_token(x_metrics_token: str = Header("", alias="X-Metrics-Token")) -> None:
+    """지표는 전체 사용자 데이터라 팀만 볼 수 있게 METRICS_TOKEN으로 막는다."""
+    expected = os.getenv("METRICS_TOKEN", "")
+    if not expected or not hmac.compare_digest(x_metrics_token, expected):
+        raise HTTPException(403, "지표를 볼 권한이 없어요")
 
 
 def resolve_now(now: datetime | None) -> datetime:
@@ -54,27 +67,35 @@ def write_settings(body: SettingsIn, user: str = Depends(get_user), conn=Depends
 # ---------- 일 ----------
 
 @app.post("/tasks/parse")
-def parse_tasks(body: ParseIn, user: str = Depends(get_user)):
+def parse_tasks(body: ParseIn, user: str = Depends(get_user), conn=Depends(get_conn)):
     """자연어 목록 → 할 일 초안. 저장하지 않는다. 확인한 drafts를 POST /tasks/batch로 보낸다."""
+    db.log_event(conn, user, "parse_requested", None, {"chars": len(body.text)})
     try:
-        return nlp.parse_tasks_text(body.text, resolve_now(body.now))
+        result = nlp.parse_tasks_text(body.text, resolve_now(body.now))
     except nlp.NotConfigured as e:
+        db.log_event(conn, user, "parse_failed", None, {"reason": "not_configured"})
         raise HTTPException(503, str(e))
     except nlp.ParseError as e:
+        db.log_event(conn, user, "parse_failed", None, {"reason": "parse_error"})
         raise HTTPException(422, str(e))
+    db.log_event(conn, user, "parse_succeeded", None, {"count": len(result["drafts"])})
+    return result
 
 
 @app.post("/tasks/batch", status_code=201)
 def create_tasks(body: TaskBatchCreate, user: str = Depends(get_user), conn=Depends(get_conn)):
     created = [db.create_task(conn, user, t.name, t.deadline, t.important, t.estimated_minutes,
                               commit=False) for t in body.tasks]
+    db.log_event(conn, user, "tasks_saved", None, {"count": len(created)}, commit=False)
     conn.commit()
     return created
 
 
 @app.post("/tasks", status_code=201)
 def create_task(body: TaskCreate, user: str = Depends(get_user), conn=Depends(get_conn)):
-    return db.create_task(conn, user, body.name, body.deadline, body.important, body.estimated_minutes)
+    task = db.create_task(conn, user, body.name, body.deadline, body.important, body.estimated_minutes)
+    db.log_event(conn, user, "tasks_saved", task["id"], {"count": 1})
+    return task
 
 
 @app.get("/tasks")
@@ -122,3 +143,38 @@ def wasted(body: WastedIn, user: str = Depends(get_user), conn=Depends(get_conn)
     db.log_event(conn, user, "wasted", None, {"minutes": body.wasted_minutes})
     return planner.wasted_preview(db.planner_tasks(conn, user), resolve_now(body.now),
                                   body.wasted_minutes, db.get_daily_minutes(conn, user))
+
+
+# ---------- 사용자 검증 지표 ----------
+
+@app.post("/events", status_code=204)
+def record_event(body: EventIn, user: str = Depends(get_user), conn=Depends(get_conn)):
+    """프론트에서만 알 수 있는 행동(접속, 계획 확인, 작업 시작 등)을 기록한다."""
+    if body.type not in metrics.CLIENT_EVENTS:
+        raise HTTPException(422, f"기록할 수 없는 이벤트예요: {body.type}")
+    if len(json.dumps(body.payload, ensure_ascii=False)) > 500:
+        raise HTTPException(422, "payload가 너무 커요")
+    db.log_event(conn, user, body.type, body.task_id, body.payload)
+
+
+@app.get("/metrics", dependencies=[Depends(require_metrics_token)])
+def get_metrics(since: datetime | None = Query(None, description="이 시각 이후 (예: 2026-11-11T00:00:00)"),
+                until: datetime | None = Query(None, description="이 시각 이전"),
+                conn=Depends(get_conn)):
+    """퍼널·이탈률·마감 내 완료율·세션 완료율·고해성사 후 복귀율·재방문을 계산한다."""
+    return metrics.compute(db.all_events(conn, since, until), db.all_tasks(conn, since, until),
+                           db.now_kst())
+
+
+@app.get("/metrics/events.csv", dependencies=[Depends(require_metrics_token)],
+         response_class=PlainTextResponse)
+def export_events(since: datetime | None = Query(None), until: datetime | None = Query(None),
+                  conn=Depends(get_conn)):
+    """제출·분석용 원본 이벤트. 사용자 ID는 익명화한다."""
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["created_at", "user", "type", "task_id", "payload"])
+    for e in db.all_events(conn, since, until):
+        writer.writerow([e["created_at"].isoformat(), metrics.anon(e["user_id"]), e["type"],
+                         e["task_id"] or "", json.dumps(e["payload"], ensure_ascii=False)])
+    return PlainTextResponse(buf.getvalue(), media_type="text/csv; charset=utf-8")
