@@ -107,3 +107,10 @@ def test_ollama_not_running(monkeypatch):
     monkeypatch.setattr(nlp.urllib.request, "urlopen", refuse)
     with pytest.raises(nlp.ParseError):
         nlp.call_llm("s", "u")
+
+
+def test_default_provider_is_anthropic(monkeypatch):
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with pytest.raises(nlp.NotConfigured):
+        nlp.call_llm("s", "u")

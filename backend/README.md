@@ -16,25 +16,27 @@ uvicorn app.main:app --reload      # http://127.0.0.1:8000/docs 에서 바로 �
 
 시연 데이터: `python -m scripts.seed_demo demo-user`
 
-### 자연어 등록을 로컬 Ollama로 돌리기 (기본값)
+### 자연어 등록 (기본: Claude API)
+
+자연어 등록(`/tasks/parse`)은 기본으로 Claude API를 쓴다. 실행 전에 키를 넣는다.
 
 ```bash
-# Ollama 설치 후 (https://ollama.com)
-ollama pull qwen2.5:7b             # 한국어가 되는 모델 아무거나. 바꾸면 OLLAMA_MODEL도 같이 바꾼다
-ollama serve                       # 이미 백그라운드로 떠 있으면 생략
-uvicorn app.main:app --reload      # 다른 터미널에서
+export ANTHROPIC_API_KEY=발급받은_키      # Windows PowerShell: $env:ANTHROPIC_API_KEY="발급받은_키"
+uvicorn app.main:app --reload
 ```
 
-Ollama가 꺼져 있으면 `/tasks/parse`만 422를 돌려주고 나머지 API는 정상 동작한다.
+키가 없으면 `/tasks/parse`만 503을 돌려주고 나머지 API는 정상 동작한다.
+
+키 없이 로컬에서만 시험하고 싶으면 Ollama도 쓸 수 있다 (선택):
+`LLM_PROVIDER=ollama`로 두고 `ollama pull qwen2.5:7b` 후 실행.
 
 환경변수
-- `DB_PATH`: 기본 `bakkwodo.db`
-- `CORS_ORIGINS`: 기본 `*`
-- `LLM_PROVIDER`: `ollama`(기본) 또는 `anthropic`
-- `OLLAMA_URL`: 기본 `http://localhost:11434`
-- `OLLAMA_MODEL`: 기본 `qwen2.5:7b`
-- `OLLAMA_TIMEOUT`: 기본 120(초). 처음 호출은 모델을 불러오느라 느릴 수 있다
-- `ANTHROPIC_API_KEY`, `LLM_MODEL`: `LLM_PROVIDER=anthropic`일 때만 사용 (기본 모델 `claude-haiku-5-5`)
+- `DB_PATH`: 기본 `bakkwodo.db`. Railway에서는 볼륨 경로(예: `/data/bakkwodo.db`)로 설정
+- `CORS_ORIGINS`: 기본 `*`. 프론트 배포 후 그 주소로 바꾸기
+- `ANTHROPIC_API_KEY`: 자연어 등록에 필요
+- `LLM_MODEL`: 기본 `claude-haiku-5-5`
+- `LLM_PROVIDER`: `anthropic`(기본) 또는 `ollama`
+- `OLLAMA_URL`, `OLLAMA_MODEL`, `OLLAMA_TIMEOUT`: `LLM_PROVIDER=ollama`일 때만 사용 (기본 `http://localhost:11434`, `qwen2.5:7b`, 120초)
 
 ## 프론트 연동 규칙
 
@@ -79,7 +81,7 @@ Ollama가 꺼져 있으면 `/tasks/parse`만 422를 돌려주고 나머지 API�
 확인 화면에서 `drafts`와 `assumptions`를 보여주고 예상 시간 등을 고치게 한 뒤, 확정하면
 `{"tasks": drafts}`를 `POST /tasks/batch`로 보낸다.
 - `503`: AI 설정이 없음(예: anthropic인데 키 없음) → 직접 입력 폼으로
-- `422`: AI가 문장을 이해하지 못했거나 Ollama가 꺼져 있음 → 다시 입력하거나 직접 입력 폼으로
+- `422`: AI가 문장을 이해하지 못했거나 AI 호출에 실패함 → 다시 입력하거나 직접 입력 폼으로
 
 `POST /tasks`(하나 저장)의 본문은 draft 하나와 같은 모양이다. `estimated_minutes`를 빼면 60분.
 

@@ -4,8 +4,8 @@
 결과는 저장하지 않고 초안만 돌려준다. 사용자가 확인·수정한 뒤 POST /tasks/batch 로 저장한다.
 
 LLM_PROVIDER 환경변수로 모델을 고른다.
-- ollama (기본): 내 컴퓨터의 Ollama 서버 사용. 키가 필요 없다.
-- anthropic: Claude API 사용. ANTHROPIC_API_KEY 필요.
+- anthropic (기본): Claude API 사용. ANTHROPIC_API_KEY 필요.
+- ollama: 내 컴퓨터의 Ollama 서버 사용 (로컬 시험용, 선택).
 외부 라이브러리 없이 표준 라이브러리로 호출한다.
 """
 from __future__ import annotations
@@ -130,7 +130,7 @@ def _call_anthropic(system: str, user_message: str) -> str:
 
 def call_llm(system: str, user_message: str) -> str:
     """설정된 모델을 호출해 응답 텍스트를 돌려준다. 테스트에서는 이 함수를 바꿔 끼운다."""
-    provider = os.getenv("LLM_PROVIDER", "ollama").lower()
+    provider = os.getenv("LLM_PROVIDER", "anthropic").lower()
     if provider == "ollama":
         return _call_ollama(system, user_message)
     if provider == "anthropic":
