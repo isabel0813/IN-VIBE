@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { isDesktop } from "../desktop/bridge";
 import { activityApi, categoryLabels, useActivity } from "./bridge";
 import "./activity.css";
@@ -11,6 +11,7 @@ export default function ActivityControls() {
   const [seconds, setSeconds] = useState(300);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  useEffect(() => setConsent(activity.consent), [activity.consent]);
   if (!isDesktop()) return null;
   async function configure(enabled: boolean) {
     setBusy(true); setError("");

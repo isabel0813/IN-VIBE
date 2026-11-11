@@ -368,6 +368,15 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
         <img draggable={false} src={characterArt[session.character]} alt="" />
         <span className="pet-state-dot" aria-hidden="true" />
       </button>
+      {native && !layout.open && <div
+        className="pet-drag-handle"
+        title="안뇽이 이동 · 이 손잡이를 드래그하세요"
+        aria-label="안뇽이 이동 손잡이"
+        style={{ left: geometry.petX + 28, top: geometry.petY + 70 }}
+        onPointerDown={(event) => {
+          if (event.button === 0) void run(() => nativeWidget.drag());
+        }}
+      >···</div>}
       {!layout.open && (error || syncError) && (
         <button
           className="pet-retry"

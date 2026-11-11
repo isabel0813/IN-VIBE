@@ -47,6 +47,7 @@
   },
   "bundle": {
     "active": true,
+    "useLocalToolsDir": true,
     "targets": ["nsis"],
     "icon": ["icons/icon.png", "icons/icon.ico"]
   }

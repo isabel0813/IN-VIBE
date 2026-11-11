@@ -131,7 +131,7 @@ export default function PlanView({
               {active && (
                 <p className="focus-note">
                   안뇽이와 같은 집중 세션을 보고 있어요. 앱을 종료하면 세션은
-                  끝나며, 활동이나 딴짓 시간은 측정하지 않아요.
+                  끝나요. Windows 활동 감지는 별도 동의 후에만 실행돼요.
                 </p>
               )}
             </section>
