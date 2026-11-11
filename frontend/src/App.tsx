@@ -15,6 +15,7 @@ import { sessionStore, useFocusSession } from "./session/store";
 import { isDesktop, onNavigate, showWidget } from "./desktop/bridge";
 import { WebWidgetPreview } from "./widget/Widget";
 import DevControls from "./widget/DevControls";
+import ActivityControls from "./activity/ActivityControls";
 
 type Step = "input" | "review" | "plan";
 const example =
@@ -400,6 +401,7 @@ export default function App() {
               </span>
             )}
           </div>
+          <ActivityControls />
           <ol className="steps" aria-label="진행 단계">
             {[
               ["input", "할 일 입력"],

@@ -1,3 +1,4 @@
+mod activity;
 mod geometry;
 mod session;
 
@@ -15,6 +16,7 @@ use tauri::{
 #[derive(Default)]
 struct AppState {
     session: Mutex<Session>,
+    activity: Mutex<activity::Detector>,
     layout: Mutex<Layout>,
     positioned: AtomicBool,
 }
@@ -54,12 +56,106 @@ fn session_action(
         .as_millis() as u64;
     let next = {
         let mut session = state.session.lock().map_err(|e| e.to_string())?;
+        let reset = matches!(&action, Action::Start { .. } | Action::End);
         session.apply(action, now, cfg!(debug_assertions))?;
+        // Commands and sampler always acquire session before activity.
+        let mut detector = state.activity.lock().map_err(|e| e.to_string())?;
+        if reset || !session.running {
+            detector.reset_session();
+        } else if session.paused {
+            detector.stop();
+        }
+        let _ = app.emit("activity-state", &detector.view);
         session.clone()
     };
     // The acknowledgement is also a snapshot; revision ordering tolerates event/response races.
     let _ = app.emit("focus-session", &next);
     Ok(next)
+}
+
+fn activity_now() -> u64 {
+    static CLOCK: std::sync::OnceLock<(std::time::Instant, u64)> = std::sync::OnceLock::new();
+    let (start, epoch) = CLOCK.get_or_init(|| {
+        (
+            std::time::Instant::now(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+        )
+    });
+    epoch + start.elapsed().as_millis() as u64
+}
+
+#[tauri::command]
+fn activity_read(caller: WebviewWindow, state: State<'_, AppState>) -> Result<activity::View> {
+    allowed(&caller)?;
+    Ok(state
+        .activity
+        .lock()
+        .map_err(|e| e.to_string())?
+        .view
+        .clone())
+}
+
+#[tauri::command]
+fn activity_configure(
+    caller: WebviewWindow,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    config: activity::Config,
+) -> Result<activity::View> {
+    allowed(&caller)?;
+    let mut session = state.session.lock().map_err(|e| e.to_string())?;
+    let mut detector = state.activity.lock().map_err(|e| e.to_string())?;
+    detector.configure(config, cfg!(debug_assertions))?;
+    if session.running {
+        session.character = if session.paused {
+            session::Character::Idle
+        } else {
+            session::Character::Focus
+        };
+        session.simulated = false;
+        session.revision += 1;
+    }
+    let _ = app.emit("focus-session", &*session);
+    let _ = app.emit("activity-state", &detector.view);
+    Ok(detector.view.clone())
+}
+
+#[tauri::command]
+fn activity_respond(
+    caller: WebviewWindow,
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: u64,
+    choice: String,
+) -> Result<activity::View> {
+    allowed(&caller)?;
+    let mut session = state.session.lock().map_err(|e| e.to_string())?;
+    let mut detector = state.activity.lock().map_err(|e| e.to_string())?;
+    if !session.running || (choice == "claim" && session.paused) {
+        return Err("집중 세션을 재개한 뒤 확인해 주세요.".into());
+    }
+    detector.respond(id, &choice, activity_now())?;
+    session.simulated = false;
+    session.character = match choice.as_str() {
+        "claim" | "review" => session::Character::Checkin,
+        "resolved" => session::Character::Recovery,
+        "break" => session::Character::Idle,
+        _ => session::Character::Focus,
+    };
+    if choice == "break" {
+        session.paused = true;
+        detector.stop();
+    }
+    if session.paused {
+        session.character = session::Character::Idle;
+    }
+    session.revision += 1;
+    let _ = app.emit("focus-session", &*session);
+    let _ = app.emit("activity-state", &detector.view);
+    Ok(detector.view.clone())
 }
 
 fn resize_widget(app: &AppHandle, open: bool) -> Result<Layout> {
@@ -189,9 +285,41 @@ fn widget_drag(caller: WebviewWindow, app: AppHandle) -> Result<()> {
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState::default())
+        .setup(|app| {
+            let app = app.handle().clone();
+            std::thread::spawn(move || loop {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+                let state = app.state::<AppState>();
+                let Ok(mut session) = state.session.lock() else {
+                    break;
+                };
+                let Ok(mut detector) = state.activity.lock() else {
+                    break;
+                };
+                if session.running && !session.paused && detector.view.consent {
+                    if detector.poll(
+                        session.running,
+                        session.paused,
+                        activity_now(),
+                        activity::sample,
+                    ) {
+                        session.character = session::Character::Suspect;
+                        session.simulated = false;
+                        session.revision += 1;
+                        // Expression only: never show a window, open a bubble or request focus here.
+                        let _ = app.emit("focus-session", &*session);
+                    }
+                    let _ = app.emit("activity-state", &detector.view);
+                }
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             session_read,
             session_action,
+            activity_read,
+            activity_configure,
+            activity_respond,
             widget_read_layout,
             widget_bubble,
             widget_show,
