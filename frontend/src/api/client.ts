@@ -1,4 +1,4 @@
-import type { ParsedTasks, Plan, Settings, Task, TaskDraft } from "./types";
+import type { ParsedTasks, Plan, Settings, Task, TaskDraft, RecoveryPlan } from "./types";
 
 export const USER_ID_KEY = "in-vibe.user-id";
 const baseUrl = (
@@ -101,5 +101,14 @@ export const api = {
       body: JSON.stringify(patch),
     }),
   plan: () => request<Plan>("/plan"),
+  wasted: (minutes: number) => {
+    if (!Number.isInteger(minutes) || minutes < 0 || minutes > 1440)
+      return Promise.reject(new Error("이탈 시간은 0~1440분의 정수로 입력해 주세요."));
+    // Server compares now - wasted with now. Never advance now or subtract again.
+    // Foreground titles/processes and incident metadata must never enter this body.
+    return request<RecoveryPlan>("/plan/wasted", {
+      method: "POST", body: JSON.stringify({ wasted_minutes: minutes }),
+    });
+  },
   settings: () => request<Settings>("/settings"),
 };

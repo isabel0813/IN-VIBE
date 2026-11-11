@@ -29,9 +29,9 @@ npm.cmd run desktop:build
 
 실행 파일은 `src-tauri/target/debug/in-vibe.exe` 또는 `src-tauri/target/release/in-vibe.exe`입니다. 설치 파일은 `src-tauri/target/release/bundle/nsis/`에 생성됩니다. 배포용 서명과 설치 프로그램 검증은 별도로 필요합니다.
 
-FastAPI는 별도로 실행해야 합니다. API 기본 주소와 `X-User-Id`는 Phase 1과 동일합니다. 데스크톱의 WebView 저장소는 Chrome의 저장소와 별개이므로 웹과 데스크톱의 사용자 UUID는 자동 공유되지 않습니다. 메인 창만 API를 호출하며 위젯은 Rust 세션에서 작업 정보를 읽습니다.
+FastAPI는 별도로 실행해야 합니다. 현재 API 기본 주소는 `http://127.0.0.1:8010`입니다. 데스크톱의 WebView 저장소는 Chrome의 저장소와 별개이므로 웹과 데스크톱의 사용자 UUID는 자동 공유되지 않습니다. 위젯은 Rust 세션에서 작업 정보를 읽고, 사용자가 이탈 시간을 확인했을 때 같은 origin의 UUID로 복구 API를 호출합니다.
 
-다른 API 주소를 사용할 때는 `.env.local`의 `VITE_API_BASE_URL`과 `src-tauri/tauri.conf.json`의 `app.security.csp` 및 `devCsp` 내 `connect-src`를 함께 변경하세요. 기본 허용 주소는 `http://127.0.0.1:8000`과 `http://localhost:8000`입니다. 백엔드가 CORS origin을 제한한다면 개발 origin `http://127.0.0.1:5173`과 Windows 패키지 origin `http://tauri.localhost`를 허용해야 합니다.
+다른 API 주소를 사용할 때는 `.env.local`의 `VITE_API_BASE_URL`과 `src-tauri/tauri.conf.json`의 `app.security.csp` 및 `devCsp` 내 `connect-src`를 함께 변경하세요. 기본 허용 주소는 `http://127.0.0.1:8010`과 `http://localhost:8010`입니다. 백엔드가 CORS origin을 제한한다면 개발 origin `http://127.0.0.1:5173`과 Windows 패키지 origin `http://tauri.localhost`를 허용해야 합니다.
 
 ## 실제 동작
 
@@ -51,7 +51,7 @@ FastAPI는 별도로 실행해야 합니다. API 기본 주소와 `X-User-Id`는
 
 `idle`, `focus`, `suspect`, `checkin`, `recovery`, `complete`에 서로 다른 SVG 표정과 한국어 대사가 연결됩니다. 개발 실행에서만 메인 화면 아래의 **개발 전용 · 안뇽이 상태 테스트**가 나타납니다. 표정 변경 자체는 세션을 시작·완료하거나 말풍선을 자동으로 열지 않습니다.
 
-`checkin`의 세 가지 응답은 각각 `recovery`, `focus`, 일시정지로 전환합니다. 현재는 실제 활동 감지가 없으므로 `simulated` 표시를 유지합니다. 딴짓 시간·활성 앱·생산성 점수 등은 만들지 않습니다. `/plan/wasted`를 호출하지 않으며, 복귀 말풍선에도 시간을 측정하지 않았다고 명시합니다.
+개발 시뮬레이션 `checkin`의 세 가지 응답은 각각 `recovery`, `focus`, 일시정지로 전환하며 `simulated` 표시를 유지합니다. 시뮬레이션은 `/plan/wasted`를 호출하지 않습니다. 실제 Windows 관측에서 시작된 확인과 복구 흐름은 [Windows MVP 안내](windows-mvp.md)를 참고하세요.
 
 이미지는 자체 제작한 파란 용 임시 SVG이며 인하대학교 마스코트 원본이 아닙니다.
 
@@ -68,7 +68,9 @@ FastAPI는 별도로 실행해야 합니다. API 기본 주소와 `X-User-Id`는
 
 `src/desktop/bridge.ts`가 Tauri IPC와 웹 미리보기를 분리합니다. `src-tauri/src/lib.rs`가 창 생성 설정을 이용한 표시·숨김·드래그·말풍선 배치와 포커스 처리를 담당합니다. 프론트엔드에 포괄적인 OS 권한을 주지 않고, 이벤트 구독과 제한된 앱 명령만 노출합니다.
 
-## 이번 환경의 검증 범위
+## Phase 2 당시 검증 기록
+
+아래는 Phase 2 완료 시점의 기록입니다. 이후 실제 감지·복구·GUI 검증 결과는 [Windows MVP 안내](windows-mvp.md)에 별도로 기록합니다.
 
 | 항목                                         | 결과                                            |
 | -------------------------------------------- | ----------------------------------------------- |
@@ -88,6 +90,6 @@ Computer Use가 실행 중인 메인 창을 발견했지만 앱 접근 승인 �
 
 수동 확인 순서: `desktop:dev`와 FastAPI 실행 → 작업 선택·시작 → 메인 숨김/작은 독립 창 확인 → 캐릭터 드래그 → 클릭/Esc/외부 클릭 → 계획·입력 화면 복귀 → 상태 테스트에서 6종 변경 → `checkin` 세 응답 → 일시정지·재개·종료 → 숨김·최소화 후 복원 → 앱 종료·재실행 시 세션 초기화 확인. 다른 배율과 보조 모니터에서도 위치·포커스를 확인하세요.
 
-## Phase 3 경계
+## 이후 확장
 
-다음 단계에서 Windows 활성 창/앱 감지, 사용자 동의와 수집 범위, 오탐 방지 및 확인 주기, 실제 딴짓 시간 측정, `/plan/wasted` 연동과 계획 복구를 구현합니다. 현재 `checkin` action을 진입점으로 재사용할 수 있지만 측정 근거가 없는 시간은 전송하면 안 됩니다. 정식 캐릭터 적용, 배포 서명·설치 테스트도 후속 작업입니다.
+Windows 활성 창 감지, 동의, 오탐 정정, 계획 복구는 MVP에 추가되었습니다. 정식 캐릭터 적용, 배포 서명·설치 테스트, 여러 모니터·배율의 장시간 검증은 후속 작업입니다.

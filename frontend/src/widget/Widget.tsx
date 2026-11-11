@@ -13,9 +13,12 @@ import type { SessionAction } from "../session/model";
 import { characterArt, characterCopy } from "./character";
 import { previewPlacement } from "./geometry";
 import "./widget.css";
+import { activityApi, useActivity } from "../activity/bridge";
+import RecoveryFlow from "../activity/RecoveryFlow";
 
 export default function Widget({ native = isDesktop() }: { native?: boolean }) {
   const { session, ready, error: syncError } = useFocusSession();
+  const { activity } = useActivity();
   const [layout, setLayout] = useState<WidgetLayout>(closedLayout);
   const [position, setPosition] = useState({
     x: window.innerWidth - 104,
@@ -224,7 +227,8 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
               개발 시뮬레이션 · 실제 활동 감지 없음
             </p>
           )}
-          {session.character === "checkin" && (
+          <RecoveryFlow incident={activity.incident} paused={session.paused || !session.running} />
+          {session.character === "checkin" && !activity.incident && session.simulated && (
             <div className="checkin-options">
               <button
                 disabled={busy || !session.running}
@@ -276,6 +280,9 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
             </button>
           </div>
           <div className="pet-session-actions">
+            {activity.consent && <button disabled={busy} onClick={() => void run(async () => {
+              await activityApi.configure({ consent: false, thresholdSeconds: activity.thresholdSeconds, relatedTerms: activity.relatedTerms, suspectTerms: activity.suspectTerms });
+            })}>활동 감지 중지</button>}
             <button
               disabled={busy || !session.running}
               onClick={() =>
@@ -349,7 +356,13 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
             moved.current = false;
             return;
           }
-          void bubble(!layout.open);
+          if (!layout.open && activity.incident && !activity.incident.claimed) {
+            const id = activity.incident.id;
+            void run(async () => {
+              await activityApi.respond(id, "review");
+              await bubble(true);
+            });
+          } else void bubble(!layout.open);
         }}
       >
         <img draggable={false} src={characterArt[session.character]} alt="" />

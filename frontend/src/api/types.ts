@@ -36,3 +36,10 @@ export interface Plan {
 export interface Settings {
   daily_minutes: number;
 }
+
+export interface RecoveryPlan {
+  wasted_minutes: number;
+  now_task_changed: boolean;
+  impacts: { task_id: number; name: string; lost_minutes?: number; short_minutes?: number; overdue?: boolean }[];
+  plan: Plan;
+}

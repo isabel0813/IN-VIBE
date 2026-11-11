@@ -9,6 +9,16 @@ afterEach(() => {
 });
 
 describe("API transport", () => {
+  it("sends only confirmed minutes to recovery, without advancing time or exposing window metadata", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => new Response("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+    await api.wasted(5);
+    expect(new URL(fetchMock.mock.calls[0][0]).pathname).toBe("/plan/wasted");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ wasted_minutes: 5 });
+    expect(fetchMock.mock.calls[0][1].headers["X-User-Id"]).toBe(getUserId());
+    for (const minutes of [-1, 1.5, 1441, NaN]) await expect(api.wasted(minutes)).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
   it("persists a UUID across calls and supplies it to every required endpoint", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response("{}"));
     fetchMock.mockImplementation(async () => new Response("{}"));

@@ -1,6 +1,6 @@
 # 바꿔도 돼? · Frontend
 
-React + Vite + TypeScript 웹앱과 Phase 2의 Tauri 2 Windows 앱입니다. 기존 FastAPI를 사용하며 별도 프론트엔드 서버 저장소나 로그인은 없습니다. 데스크톱 실행·위젯 구조·검증 범위는 [데스크톱 안내](docs/desktop.md)를 참고하세요.
+React + Vite + TypeScript 웹앱과 Tauri 2 Windows 앱입니다. 기존 FastAPI를 사용하며 별도 프론트엔드 서버 저장소나 로그인은 없습니다. 데스크톱 실행·위젯 구조는 [데스크톱 안내](docs/desktop.md), 활동 감지·복구와 최신 검증 범위는 [Windows MVP 안내](docs/windows-mvp.md)를 참고하세요.
 
 ## 실행
 
@@ -41,6 +41,7 @@ AI 오류(422/503), Ollama 미실행, 네트워크 오류 시 직접 입력 폼�
 | `PATCH /tasks/{id}` | 작업 정보 수정 또는 `{ done: boolean }`          |
 | `GET /plan`         | 작업 순서, 지금 할 일, 여유·부족 시간, 지난 마감 |
 | `GET /settings`     | 내일 이후 계산에 쓰는 `daily_minutes` 읽기       |
+| `POST /plan/wasted` | 사용자가 확인한 `{ wasted_minutes }` → 변화와 현재 계획 |
 
 - 첫 요청에서 UUID를 생성하고 `localStorage`의 `in-vibe.user-id`에 저장합니다. 모든 요청에 동일한 `X-User-Id`를 보냅니다. 저장소를 지우거나 브라우저/접속 origin을 바꾸면 별도 사용자로 처리됩니다.
 - 날짜 입력과 표시는 한국 시간(Asia/Seoul)입니다. 저장할 때 ISO 8601의 `+09:00`을 명시합니다.
@@ -61,7 +62,7 @@ src/
   styles.css    # 노트북 우선 다크 테마와 작은 화면 대응
 ```
 
-UI와 HTTP 코드를 분리했습니다. 데스크톱에서는 `작업 시작` 시 독립 안뇽이 위젯을 표시하고 메인 창을 숨깁니다. Rust 메모리에서 세션을 공유하며 앱 재시작 후에는 자동 재개하지 않습니다. 웹에서는 OS 창 제어 없는 미리보기를 제공합니다. 실제 활동 감지, 딴짓 시간 측정, 계획 복구 이벤트는 Phase 3 범위입니다.
+UI와 HTTP 코드를 분리했습니다. 데스크톱에서는 `작업 시작` 시 독립 안뇽이 위젯을 표시하고 메인 창을 숨깁니다. Rust 메모리에서 세션을 공유하며 앱 재시작 후에는 자동 재개하지 않습니다. 웹에서는 OS 창 제어 없는 미리보기를 제공합니다. Windows에서는 명시적 동의 후 활성 창을 로컬 분류하고, 사용자가 확인한 이탈 시간만 계획 복구 API로 전달합니다.
 
 ## 검증
 
