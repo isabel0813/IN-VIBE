@@ -63,7 +63,6 @@ class JudgeFeedbackIn(BaseModel):
     session_id: int
     title: str = Field(min_length=1, max_length=400)
     video_id: str | None = Field(None, pattern=r"^[A-Za-z0-9_-]{11}$")
-    related: bool = Field(True, description='"아니? 전혀~" → true (공부 맞음)')
 
 
 class SettingsIn(BaseModel):

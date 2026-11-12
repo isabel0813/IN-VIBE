@@ -59,8 +59,8 @@ uvicorn app.main:app --reload
 | POST | `/sessions` | 할 일 한 줄로 집중 세션 시작 (**새 핵심**) |
 | GET | `/sessions/current` | 진행 중인 세션 (없으면 `null`) |
 | POST | `/sessions/{id}/end` | 세션 종료 (`completed` / `stopped`) |
-| POST | `/judge` | 영상 제목이 할 일과 관련 있는지 AI 판단 (**새 핵심**) |
-| POST | `/judge/feedback` | "아니? 전혀~" 정정. 이 세션에서 이 영상은 공부로 인정 |
+| POST | `/judge` | 영상 분류 → 냅둘지(`ignore`) "너 혹시 딴짓해?"(`ask`)일지 (**새 핵심**) |
+| POST | `/judge/feedback` | "아니? 전혀~" 정정. 이 세션에서 이 영상은 냅둠 |
 | POST | `/tasks/parse` | 자연어 목록 → 할 일 초안 (저장 안 함) |
 | POST | `/tasks/batch` | 초안 여러 개를 한 번에 저장 |
 | POST | `/tasks` | 일 하나 저장 |
@@ -95,13 +95,20 @@ uvicorn app.main:app --reload
 응답:
 
 ```json
-{"related": true, "reason": "같은 과목 개념 설명", "source": "ai", "cached": false}
+{"category": "study", "action": "ignore", "reason": "같은 과목 개념 설명", "source": "ai", "cached": false}
 ```
 
-- `related`: `true` 공부 · `false` 딴짓 · `null` 판단 불가(Study With Me, 공부 음악 등) → **개입하지 않는다**
-- `source`: `ai`(이번에 AI가 판단) · `ai`/`user` + `cached: true`(같은 세션에서 이미 판단한 영상, AI 호출 없음)
+**프론트는 `action`만 보면 된다.**
+
+- `action: "ignore"` → 냅둔다
+  - `category: "study"`: 할 일과 관련된 영상
+  - `category: "background"`: 확실한 배경음악·플레이리스트·백색소음·Study With Me 등
+  - `category: "user_ok"`: 사용자가 "아니? 전혀~"로 정정한 영상
+- `action: "ask"` → **"너 혹시 딴짓해?"** 를 띄운다
+  - `category: "other"`: 애매한 것과 확실한 딴짓을 구분하지 않고 전부 여기 (뮤직비디오·무대처럼 보는 영상일 수도 있으면 여기)
+- `cached: true`: 같은 세션에서 이미 판단한 영상이라 AI를 다시 부르지 않음
 - 보내는 것은 **할 일 한 줄 + 영상 제목**뿐. URL·채널·계정은 보내지 않는다
-- 서버는 **제목을 저장하지 않는다.** 영상 ID(없으면 제목)의 해시와 판단 결과만 저장한다
+- 서버는 **제목을 저장하지 않는다.** 영상 ID(없으면 제목)의 해시와 분류 결과만 저장한다
 - 오류: `404` 세션 없음 · `409` 끝난 세션 · `429` 세션당 AI 호출 한도 초과 · `502` AI 응답 이상 · `503` API 키 없음
   → 오류일 때는 로컬 키워드 판단으로 대신하거나 개입하지 않는다
 
@@ -110,10 +117,11 @@ uvicorn app.main:app --reload
 "너 혹시 딴짓해?"에서 **아니? 전혀~** 를 눌렀을 때.
 
 ```json
-{"session_id": 7, "title": "패러데이 법칙 10분 정리", "video_id": "abcdefghijk", "related": true}
+{"session_id": 7, "title": "아이유 콘서트 풀버전", "video_id": "abcdefghijk"}
 ```
 
-이 세션에서 같은 영상은 다시 `related: true`로 돌려준다. 정정 횟수는 오탐 지표로 쓴다.
+응답 `{"category": "user_ok", "action": "ignore", ...}`. 이 세션에서 같은 영상은 계속 `ignore`로 돌려준다.
+정정 횟수는 오탐 지표로 쓴다.
 
 **동의 문구에 꼭 넣을 것:** "집중 세션 중 보고 있는 유튜브 영상 제목과 할 일 한 줄을 AI(Claude)에 보내 공부 관련인지 판단합니다. 제목은 저장하지 않습니다."
 

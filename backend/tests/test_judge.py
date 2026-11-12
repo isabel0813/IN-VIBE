@@ -18,17 +18,19 @@ def fake_llm(reply):
     return _call, calls
 
 
-def test_judge_title_verdicts(monkeypatch):
-    for verdict, expected in [("related", True), ("unrelated", False), ("unsure", None)]:
-        call, calls = fake_llm(f'{{"verdict": "{verdict}", "reason": "이유"}}')
+def test_judge_title_categories(monkeypatch):
+    # 공부·확실한 배경음악은 냅두고, 나머지(애매함 + 딴짓)는 전부 "너 혹시 딴짓해?"
+    for category, action in [("study", "ignore"), ("background", "ignore"), ("other", "ask")]:
+        call, calls = fake_llm(f'{{"category": "{category}", "reason": "이유"}}')
         monkeypatch.setattr(nlp, "call_llm", call)
         r = judge.judge_title("전자기 유도 공부", "패러데이 법칙 10분 정리")
-        assert r == {"related": expected, "reason": "이유"}
+        assert r == {"category": category, "action": action, "reason": "이유"}
         assert "할 일: 전자기 유도 공부" in calls[0] and "패러데이" in calls[0]
+    assert judge.action_for("user_ok") == "ignore"
 
 
-def test_judge_title_bad_verdict(monkeypatch):
-    call, _ = fake_llm('{"verdict": "maybe"}')
+def test_judge_title_bad_category(monkeypatch):
+    call, _ = fake_llm('{"category": "maybe"}')
     monkeypatch.setattr(nlp, "call_llm", call)
     with pytest.raises(nlp.ParseError):
         judge.judge_title("물리", "아무 영상")
@@ -55,10 +57,10 @@ def test_session_and_judgment_roundtrip(conn):
     assert db.get_session(conn, "other", s2["id"]) is None
 
     key = judge.video_key("abcdefghijk", "게임 영상")
-    db.save_judgment(conn, s2["id"], key, False, "ai", "게임", count_ai_call=True)
-    assert db.get_judgment(conn, s2["id"], key) == {"related": False, "reason": "게임", "source": "ai"}
-    db.save_judgment(conn, s2["id"], key, True, "user", "사용자가 정정함")
-    assert db.get_judgment(conn, s2["id"], key)["related"] is True
+    db.save_judgment(conn, s2["id"], key, "other", "ai", "게임", count_ai_call=True)
+    assert db.get_judgment(conn, s2["id"], key) == {"category": "other", "reason": "게임", "source": "ai"}
+    db.save_judgment(conn, s2["id"], key, "user_ok", "user", "사용자가 정정함")
+    assert db.get_judgment(conn, s2["id"], key)["category"] == "user_ok"
     assert db.session_ai_calls(conn, s2["id"]) == 1
     # 제목 원문은 DB 어디에도 저장되지 않는다
     dump = "\n".join(conn.iterdump())

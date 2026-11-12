@@ -45,10 +45,10 @@ CREATE TABLE IF NOT EXISTS sessions (
     end_reason TEXT,
     ai_calls INTEGER NOT NULL DEFAULT 0
 );
-CREATE TABLE IF NOT EXISTS judgments (
+CREATE TABLE IF NOT EXISTS video_judgments (
     session_id INTEGER NOT NULL,
     video_key TEXT NOT NULL,
-    related INTEGER,
+    category TEXT NOT NULL,
     source TEXT NOT NULL,
     reason TEXT,
     created_at TEXT NOT NULL,
@@ -279,23 +279,22 @@ def session_ai_calls(conn, session_id: int) -> int:
 
 
 def get_judgment(conn, session_id: int, key: str) -> dict | None:
-    row = conn.execute("SELECT * FROM judgments WHERE session_id = ? AND video_key = ?",
+    row = conn.execute("SELECT * FROM video_judgments WHERE session_id = ? AND video_key = ?",
                        (session_id, key)).fetchone()
     if not row:
         return None
-    related = None if row["related"] is None else bool(row["related"])
-    return {"related": related, "reason": row["reason"] or "", "source": row["source"]}
+    return {"category": row["category"], "reason": row["reason"] or "", "source": row["source"]}
 
 
-def save_judgment(conn, session_id: int, key: str, related: bool | None, source: str,
+def save_judgment(conn, session_id: int, key: str, category: str, source: str,
                   reason: str = "", count_ai_call: bool = False) -> None:
+    """category: study | background | other | user_ok(사용자 정정)"""
     conn.execute(
-        "INSERT INTO judgments (session_id, video_key, related, source, reason, created_at) "
+        "INSERT INTO video_judgments (session_id, video_key, category, source, reason, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?) "
-        "ON CONFLICT(session_id, video_key) DO UPDATE SET related = excluded.related, "
+        "ON CONFLICT(session_id, video_key) DO UPDATE SET category = excluded.category, "
         "source = excluded.source, reason = excluded.reason, created_at = excluded.created_at",
-        (session_id, key, None if related is None else int(related), source, reason,
-         now_kst().isoformat()),
+        (session_id, key, category, source, reason, now_kst().isoformat()),
     )
     if count_ai_call:
         conn.execute("UPDATE sessions SET ai_calls = ai_calls + 1 WHERE id = ?", (session_id,))

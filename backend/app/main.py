@@ -179,15 +179,16 @@ def end_session(session_id: int, body: SessionEnd | None = None, user: str = Dep
 
 @app.post("/judge")
 def judge_video(body: JudgeIn, user: str = Depends(get_user), conn=Depends(get_conn)):
-    """영상이 세션의 할 일과 관련 있는지. related: true(공부) / false(딴짓) / null(판단 불가 → 개입 안 함).
+    """영상을 분류하고 개입할지 알려준다.
+    action: ignore(공부·배경음악 → 냅둠) / ask("너 혹시 딴짓해?" 띄움).
     제목은 AI 판단에만 쓰고 저장하지 않는다. 같은 세션의 같은 영상은 저장된 결과를 돌려준다."""
     s = _active_session(conn, user, body.session_id)
     key = judge.video_key(body.video_id, body.title)
     cached = db.get_judgment(conn, s["id"], key)
     if cached:
         db.log_event(conn, user, "judge_requested", None,
-                     {"session_id": s["id"], "source": "cache", "related": cached["related"]})
-        return {**cached, "cached": True}
+                     {"session_id": s["id"], "source": "cache", "category": cached["category"]})
+        return {**cached, "action": judge.action_for(cached["category"]), "cached": True}
 
     limit = int(os.getenv("JUDGE_MAX_PER_SESSION", "120"))
     if db.session_ai_calls(conn, s["id"]) >= limit:
@@ -199,25 +200,26 @@ def judge_video(body: JudgeIn, user: str = Depends(get_user), conn=Depends(get_c
     except nlp.ParseError as e:
         db.log_event(conn, user, "judge_failed", None, {"session_id": s["id"]})
         raise HTTPException(502, str(e))
-    db.save_judgment(conn, s["id"], key, result["related"], "ai", result["reason"],
+    db.save_judgment(conn, s["id"], key, result["category"], "ai", result["reason"],
                      count_ai_call=True)
     db.log_event(conn, user, "judge_requested", None,
-                 {"session_id": s["id"], "source": "ai", "related": result["related"]})
+                 {"session_id": s["id"], "source": "ai", "category": result["category"]})
     return {**result, "source": "ai", "cached": False}
 
 
 @app.post("/judge/feedback")
 def judge_feedback(body: JudgeFeedbackIn, user: str = Depends(get_user), conn=Depends(get_conn)):
-    """"아니? 전혀~": 이 세션에서 이 영상은 공부로 보고 다시 묻지 않는다."""
+    """"아니? 전혀~": 이 세션에서 이 영상은 냅두고 다시 묻지 않는다."""
     s = _active_session(conn, user, body.session_id)
     key = judge.video_key(body.video_id, body.title)
     before = db.get_judgment(conn, s["id"], key)
-    db.save_judgment(conn, s["id"], key, body.related, "user", "사용자가 정정함")
+    db.save_judgment(conn, s["id"], key, "user_ok", "user", "사용자가 정정함")
     db.log_event(conn, user, "judge_corrected", None,
-                 {"session_id": s["id"], "related": body.related,
-                  "previous": before["related"] if before else None,
+                 {"session_id": s["id"],
+                  "previous": before["category"] if before else None,
                   "previous_source": before["source"] if before else None})
-    return {"related": body.related, "reason": "사용자가 정정함", "source": "user", "cached": True}
+    return {"category": "user_ok", "action": "ignore", "reason": "사용자가 정정함",
+            "source": "user", "cached": True}
 
 
 # ---------- 사용자 검증 지표 ----------
