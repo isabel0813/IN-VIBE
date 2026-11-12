@@ -20,14 +20,15 @@ if (existsSync(localBin)) {
   env[pathKey] = join(localCargo, "bin") + delimiter + (env[pathKey] || "");
 }
 const [action, ...args] = process.argv.slice(2);
-const cargoAction = action === "check" || action === "test" || action === "fmt";
+const hostAction = action?.startsWith("host:");
+const cargoAction = hostAction || action === "check" || action === "test" || action === "fmt";
 const executable = cargoAction
   ? existsSync(localBin)
     ? localBin
     : cargoExe
   : process.execPath;
 const parameters = cargoAction
-  ? [action, "--manifest-path", "src-tauri/Cargo.toml", ...args]
+  ? hostAction ? [action.slice(5), "--manifest-path", "../extension/native-host/Cargo.toml", "--target-dir", "src-tauri/target", ...args] : [action, "--manifest-path", "src-tauri/Cargo.toml", ...args]
   : [
       require.resolve("@tauri-apps/cli/tauri.js"),
       ...(action ? [action] : []),

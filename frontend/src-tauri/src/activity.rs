@@ -36,6 +36,7 @@ pub struct Incident {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct View {
+    pub totals: Totals,
     pub revision: u64,
     pub consent: bool,
     pub monitoring: bool,
@@ -51,6 +52,7 @@ pub struct View {
 impl Default for View {
     fn default() -> Self {
         Self {
+            totals: Totals::default(),
             revision: 0,
             consent: false,
             monitoring: false,
@@ -65,6 +67,15 @@ impl Default for View {
         }
     }
 }
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Totals {
+    pub focus_seconds: u64,
+    pub suspicions: u64,
+    pub confessions: u64,
+    pub corrections: u64,
+    pub last_return_seconds: Option<u64>,
+}
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
@@ -75,6 +86,9 @@ pub struct Config {
 }
 #[derive(Default)]
 pub struct Detector {
+    incident_key: Option<String>,
+    focus_ms: u64,
+    return_since: Option<u64>,
     pub view: View,
     previous: Option<(String, Category, u64)>,
     corrections: HashSet<String>,
@@ -132,6 +146,7 @@ impl Detector {
         self.view.incident = None;
         self.corrections.clear();
         self.cooldown_until = 0;
+        self.incident_key = None;
     }
     pub fn stop(&mut self) {
         self.previous = None;
@@ -168,6 +183,14 @@ impl Detector {
         Category::Unknown
     }
     pub fn observe(&mut self, sample: Result<Sample, String>, now: u64) -> bool {
+        self.observe_as(sample, now, None)
+    }
+    pub fn observe_as(
+        &mut self,
+        sample: Result<Sample, String>,
+        now: u64,
+        override_class: Option<(String, Category)>,
+    ) -> bool {
         self.view.revision += 1;
         self.view.monitoring = true;
         let sample = match sample {
@@ -178,8 +201,11 @@ impl Detector {
                 return false;
             }
         };
-        let key = sample.key();
-        let category = self.classify(&sample);
+        let (key, mut category) =
+            override_class.unwrap_or_else(|| (sample.key(), self.classify(&sample)));
+        if !sample.idle && self.corrections.contains(&key) {
+            category = Category::Related;
+        }
         let delta = self
             .previous
             .as_ref()
@@ -192,6 +218,15 @@ impl Detector {
         }
         // Samples use a 1-second cadence. Wall-clock timestamps are only labels; callers supply monotonic elapsed time.
         self.held_ms += delta;
+        if category == Category::Related {
+            self.focus_ms += delta;
+            self.view.totals.focus_seconds = self.focus_ms / 1000;
+            if self.view.incident.is_none() && !sample.process.eq_ignore_ascii_case("in-vibe.exe") {
+                if let Some(start) = self.return_since.take() {
+                    self.view.totals.last_return_seconds = Some(now.saturating_sub(start) / 1000);
+                }
+            }
+        }
         self.view.held_seconds = self.held_ms / 1000;
         self.previous = Some((key.clone(), category.clone(), now));
         self.view.category = category.clone();
@@ -206,6 +241,9 @@ impl Detector {
             && now >= self.cooldown_until
         {
             self.next_id += 1;
+            self.incident_key = Some(key);
+            self.view.totals.suspicions += 1;
+            self.return_since = Some(now);
             self.view.incident = Some(Incident {
                 id: self.next_id,
                 started_at: now.saturating_sub(self.view.held_seconds * 1000),
@@ -234,6 +272,7 @@ impl Detector {
                 return Err("이미 전송한 요청이에요. 계획 보기에서 결과를 확인하세요.".into());
             }
             incident.claimed = true;
+            self.view.totals.confessions += 1;
         } else {
             if incident.claimed && choice != "resolved" {
                 return Err("전송 후에는 확인 결과를 바꿀 수 없어요.".into());
@@ -244,8 +283,13 @@ impl Detector {
                 return Err("알 수 없는 응답이에요.".into());
             }
             if choice == "studying" {
-                self.corrections
-                    .insert(format!("{}\n{}", incident.process, incident.title));
+                self.view.totals.corrections += 1;
+                self.return_since = None;
+                self.corrections.insert(
+                    self.incident_key
+                        .clone()
+                        .unwrap_or_else(|| format!("{}\n{}", incident.process, incident.title)),
+                );
             }
             self.view.incident = None;
             self.previous = None;
@@ -282,12 +326,7 @@ pub fn sample() -> Result<Sample, String> {
         if GetLastInputInfo(&mut input) == 0 {
             return Err("유휴 상태를 확인하지 못했어요.".into());
         }
-        if (GetTickCount64() as u32).wrapping_sub(input.dwTime) >= 60_000 {
-            return Ok(Sample {
-                idle: true,
-                ..Sample::default()
-            });
-        }
+        let idle = (GetTickCount64() as u32).wrapping_sub(input.dwTime) >= 60_000;
         let hwnd = GetForegroundWindow();
         if hwnd.is_null() {
             return Err("활성 창을 확인하지 못했어요.".into());
@@ -312,7 +351,7 @@ pub fn sample() -> Result<Sample, String> {
         Ok(Sample {
             process,
             title: String::from_utf16_lossy(&title[..count]),
-            idle: false,
+            idle,
         })
     }
 }

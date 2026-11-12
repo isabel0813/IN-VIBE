@@ -367,6 +367,7 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
       >
         <img draggable={false} src={characterArt[session.character]} alt="" />
         <span className="pet-state-dot" aria-hidden="true" />
+        {!layout.open && session.character === "suspect" && activity.incident && !session.paused && <span className="pet-nudge">잠깐, 확인!</span>}
       </button>
       {native && !layout.open && <div
         className="pet-drag-handle"

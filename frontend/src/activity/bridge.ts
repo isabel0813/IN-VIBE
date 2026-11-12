@@ -10,6 +10,7 @@ export interface ActivityConfig {
   consent: boolean; thresholdSeconds: number; relatedTerms: string[]; suspectTerms: string[];
 }
 export interface Activity extends ActivityConfig {
+  totals?: { focusSeconds: number; suspicions: number; confessions: number; corrections: number; lastReturnSeconds: number | null };
   revision: number; monitoring: boolean; category: "related" | "suspect" | "unknown" | "idle";
   current: { process: string; title: string; idle: boolean } | null;
   heldSeconds: number; incident: Incident | null; error: string | null;

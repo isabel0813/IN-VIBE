@@ -295,3 +295,4 @@ html.widget-page,
     margin-inline: 22px;
   }
 }
+.pet-nudge { position: absolute; top: 0; left: 2px; right: 2px; padding: 3px 1px; border-radius: 8px; background: #223956; color: #eaf4ff; font-size: 10px; pointer-events: none; border: 1px solid #6697cc; }

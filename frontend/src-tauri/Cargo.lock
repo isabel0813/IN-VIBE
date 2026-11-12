@@ -42,6 +42,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "annyong-native-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1459,6 +1468,7 @@ dependencies = [
 name = "in-vibe"
 version = "0.2.0"
 dependencies = [
+ "annyong-native-protocol",
  "serde",
  "serde_json",
  "tauri",

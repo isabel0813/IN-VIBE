@@ -1,4 +1,5 @@
 mod activity;
+mod browser;
 mod geometry;
 mod session;
 
@@ -17,6 +18,7 @@ use tauri::{
 struct AppState {
     session: Mutex<Session>,
     activity: Mutex<activity::Detector>,
+    browser: Mutex<browser::Browser>,
     layout: Mutex<Layout>,
     positioned: AtomicBool,
 }
@@ -60,6 +62,11 @@ fn session_action(
         session.apply(action, now, cfg!(debug_assertions))?;
         // Commands and sampler always acquire session before activity.
         let mut detector = state.activity.lock().map_err(|e| e.to_string())?;
+        state
+            .browser
+            .lock()
+            .map_err(|e| e.to_string())?
+            .invalidate();
         if reset || !session.running {
             detector.reset_session();
         } else if session.paused {
@@ -109,6 +116,11 @@ fn activity_configure(
     let mut session = state.session.lock().map_err(|e| e.to_string())?;
     let mut detector = state.activity.lock().map_err(|e| e.to_string())?;
     detector.configure(config, cfg!(debug_assertions))?;
+    let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+    browser.invalidate();
+    if !detector.view.consent {
+        browser.view.consent = false;
+    }
     if session.running {
         session.character = if session.paused {
             session::Character::Idle
@@ -148,6 +160,11 @@ fn activity_respond(
     if choice == "break" {
         session.paused = true;
         detector.stop();
+        state
+            .browser
+            .lock()
+            .map_err(|e| e.to_string())?
+            .invalidate();
     }
     if session.paused {
         session.character = session::Character::Idle;
@@ -156,6 +173,104 @@ fn activity_respond(
     let _ = app.emit("focus-session", &*session);
     let _ = app.emit("activity-state", &detector.view);
     Ok(detector.view.clone())
+}
+
+#[tauri::command]
+fn browser_read(caller: WebviewWindow, state: State<'_, AppState>) -> Result<browser::BrowserView> {
+    allowed(&caller)?;
+    let session = state.session.lock().map_err(|e| e.to_string())?;
+    let detector = state.activity.lock().map_err(|e| e.to_string())?;
+    let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+    Ok(browser.status(
+        activity_now(),
+        session.running && !session.paused && detector.view.consent,
+    ))
+}
+#[tauri::command]
+fn browser_configure(
+    caller: WebviewWindow,
+    state: State<'_, AppState>,
+    consent: bool,
+) -> Result<browser::BrowserView> {
+    allowed(&caller)?;
+    let mut detector = state.activity.lock().map_err(|e| e.to_string())?;
+    if consent && !detector.view.consent {
+        return Err("먼저 Windows 활동 감지에 동의해 주세요.".into());
+    }
+    let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+    browser.invalidate();
+    browser.view.consent = consent;
+    detector.stop();
+    Ok(browser.view.clone())
+}
+
+#[cfg(windows)]
+fn start_browser_bridge(app: AppHandle) {
+    std::thread::spawn(move || {
+        use annyong_native_protocol::{pipe::Pipe, Message};
+        let mut pipe = match Pipe::server() {
+            Ok(p) => p,
+            Err(_) => {
+                if let Ok(mut b) = app.state::<AppState>().browser.lock() {
+                    b.view.error=Some("YouTube 연결을 열지 못했어요. 다른 IN-VIBE 앱이 실행 중인지 확인해 주세요.".into());
+                }
+                return;
+            }
+        };
+        let mut connected = false;
+        let mut seq = 0;
+        let mut last = activity_now();
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(25));
+            if !connected {
+                match pipe.connect() {
+                    Ok(true) => {
+                        connected = true;
+                        seq = 0;
+                        last = activity_now();
+                    }
+                    Ok(false) => continue,
+                    Err(_) => {
+                        pipe.disconnect();
+                        continue;
+                    }
+                }
+            }
+            let result = (|| -> Result<()> {
+                let now = activity_now();
+                if now.saturating_sub(last) > 3500 {
+                    return Err("timeout".into());
+                }
+                let Some(bytes) = pipe.receive().map_err(|e| e.to_string())? else {
+                    return Ok(());
+                };
+                let message: Message = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+                if !message.valid() || message.seq <= seq {
+                    return Err("invalid message".into());
+                }
+                seq = message.seq;
+                last = now;
+                let state = app.state::<AppState>();
+                let session = state.session.lock().map_err(|e| e.to_string())?;
+                let detector = state.activity.lock().map_err(|e| e.to_string())?;
+                let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+                let status = browser.accept(
+                    &message,
+                    now,
+                    session.running && !session.paused && detector.view.consent,
+                );
+                pipe.send(&serde_json::to_vec(&status).map_err(|e| e.to_string())?)
+                    .map_err(|e| e.to_string())
+            })();
+            if result.is_err() {
+                pipe.disconnect();
+                connected = false;
+                if let Ok(mut browser) = app.state::<AppState>().browser.lock() {
+                    browser.disconnect();
+                }
+            }
+        }
+    });
 }
 
 fn resize_widget(app: &AppHandle, open: bool) -> Result<Layout> {
@@ -287,6 +402,8 @@ pub fn run() {
         .manage(AppState::default())
         .setup(|app| {
             let app = app.handle().clone();
+            #[cfg(windows)]
+            start_browser_bridge(app.clone());
             std::thread::spawn(move || loop {
                 std::thread::sleep(std::time::Duration::from_secs(1));
                 let state = app.state::<AppState>();
@@ -297,12 +414,36 @@ pub fn run() {
                     break;
                 };
                 if session.running && !session.paused && detector.view.consent {
-                    if detector.poll(
-                        session.running,
-                        session.paused,
-                        activity_now(),
-                        activity::sample,
-                    ) {
+                    let now = activity_now();
+                    let raised = match activity::sample() {
+                        Err(e) => detector.observe(Err(e), now),
+                        Ok(sample) => {
+                            let Ok(mut browser) = state.browser.lock() else {
+                                break;
+                            };
+                            browser.status(now, true);
+                            let decision = browser.choose(
+                                &sample,
+                                session.task.as_ref().map(|t| t.name.as_str()).unwrap_or(""),
+                                now,
+                            );
+                            if matches!(decision, browser::Decision::Observe(..))
+                                && std::mem::take(&mut browser.discontinuous)
+                            {
+                                detector.stop();
+                            }
+                            match decision {
+                                browser::Decision::Native => {
+                                    detector.poll(true, false, now, || Ok(sample))
+                                }
+                                browser::Decision::Skip => false,
+                                browser::Decision::Observe(s, at, key, category) => {
+                                    detector.observe_as(Ok(s), at, Some((key, category)))
+                                }
+                            }
+                        }
+                    };
+                    if raised {
                         session.character = session::Character::Suspect;
                         session.simulated = false;
                         session.revision += 1;
@@ -320,6 +461,8 @@ pub fn run() {
             activity_read,
             activity_configure,
             activity_respond,
+            browser_read,
+            browser_configure,
             widget_read_layout,
             widget_bubble,
             widget_show,
