@@ -36,7 +36,26 @@ CREATE TABLE IF NOT EXISTS settings (
     user_id TEXT PRIMARY KEY,
     daily_minutes INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    task TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    end_reason TEXT,
+    ai_calls INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS judgments (
+    session_id INTEGER NOT NULL,
+    video_key TEXT NOT NULL,
+    related INTEGER,
+    source TEXT NOT NULL,
+    reason TEXT,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (session_id, video_key)
+);
 CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);
 """
 
@@ -198,6 +217,89 @@ def all_tasks(conn, since: datetime | None = None, until: datetime | None = None
         }
         for r in rows
     ]
+
+
+# ---------- 집중 세션과 영상 판단 ----------
+
+def _session_row(row) -> dict:
+    return {
+        "id": row["id"],
+        "task": row["task"],
+        "started_at": row["started_at"],
+        "ended_at": row["ended_at"],
+        "end_reason": row["end_reason"],
+        "active": row["ended_at"] is None,
+    }
+
+
+def start_session(conn, user_id: str, task: str) -> dict:
+    """새 세션을 시작한다. 진행 중인 세션이 있으면 'replaced'로 끝낸다."""
+    now = now_kst().isoformat()
+    for old in conn.execute("SELECT id FROM sessions WHERE user_id = ? AND ended_at IS NULL",
+                            (user_id,)).fetchall():
+        conn.execute("UPDATE sessions SET ended_at = ?, end_reason = 'replaced' WHERE id = ?",
+                     (now, old["id"]))
+        log_event(conn, user_id, "session_ended", None,
+                  {"session_id": old["id"], "reason": "replaced"}, commit=False)
+    cur = conn.execute("INSERT INTO sessions (user_id, task, started_at) VALUES (?, ?, ?)",
+                       (user_id, task, now))
+    log_event(conn, user_id, "session_started", None, {"session_id": cur.lastrowid}, commit=False)
+    conn.commit()
+    return get_session(conn, user_id, cur.lastrowid)
+
+
+def get_session(conn, user_id: str, session_id: int) -> dict | None:
+    row = conn.execute("SELECT * FROM sessions WHERE id = ? AND user_id = ?",
+                       (session_id, user_id)).fetchone()
+    return _session_row(row) if row else None
+
+
+def current_session(conn, user_id: str) -> dict | None:
+    row = conn.execute("SELECT * FROM sessions WHERE user_id = ? AND ended_at IS NULL "
+                       "ORDER BY id DESC LIMIT 1", (user_id,)).fetchone()
+    return _session_row(row) if row else None
+
+
+def end_session(conn, user_id: str, session_id: int, reason: str) -> dict | None:
+    s = get_session(conn, user_id, session_id)
+    if not s:
+        return None
+    if s["active"]:
+        conn.execute("UPDATE sessions SET ended_at = ?, end_reason = ? WHERE id = ?",
+                     (now_kst().isoformat(), reason, session_id))
+        log_event(conn, user_id, "session_ended", None,
+                  {"session_id": session_id, "reason": reason}, commit=False)
+        conn.commit()
+    return get_session(conn, user_id, session_id)
+
+
+def session_ai_calls(conn, session_id: int) -> int:
+    row = conn.execute("SELECT ai_calls FROM sessions WHERE id = ?", (session_id,)).fetchone()
+    return row["ai_calls"] if row else 0
+
+
+def get_judgment(conn, session_id: int, key: str) -> dict | None:
+    row = conn.execute("SELECT * FROM judgments WHERE session_id = ? AND video_key = ?",
+                       (session_id, key)).fetchone()
+    if not row:
+        return None
+    related = None if row["related"] is None else bool(row["related"])
+    return {"related": related, "reason": row["reason"] or "", "source": row["source"]}
+
+
+def save_judgment(conn, session_id: int, key: str, related: bool | None, source: str,
+                  reason: str = "", count_ai_call: bool = False) -> None:
+    conn.execute(
+        "INSERT INTO judgments (session_id, video_key, related, source, reason, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(session_id, video_key) DO UPDATE SET related = excluded.related, "
+        "source = excluded.source, reason = excluded.reason, created_at = excluded.created_at",
+        (session_id, key, None if related is None else int(related), source, reason,
+         now_kst().isoformat()),
+    )
+    if count_ai_call:
+        conn.execute("UPDATE sessions SET ai_calls = ai_calls + 1 WHERE id = ?", (session_id,))
+    conn.commit()
 
 
 def planner_tasks(conn, user_id: str) -> list[planner.Task]:

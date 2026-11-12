@@ -1,7 +1,10 @@
 # 바꿔도 돼? 백엔드
 
-할 일을 자연어로 받아서, 남은 시간 기준으로 **지금 무엇을 할지**를 정해주는 FastAPI 서버.
-일(과목) 단위로 계산하며, 일 안의 내용은 쪼개지 않는다. DB는 SQLite 파일 하나(`bakkwodo.db`)다.
+사용자가 적은 **지금 할 일 한 줄**을 기준으로, 보고 있는 유튜브 영상이 공부인지 딴짓인지 AI로 판단하고
+안뇽이 개입 후 **공부로 돌아왔는지**를 기록·측정하는 FastAPI 서버. DB는 SQLite 파일 하나(`bakkwodo.db`)다.
+
+> 2026-11-12 방향 변경: 할 일 목록·우선순위 계산은 핵심 기능에서 뺐다. 아래 `/tasks`, `/plan` 계열 API는
+> 기존 앱 호환을 위해 남겨 두었고, 새 흐름은 **세션 → 영상 판단 → 정정 → 복귀 지표**다.
 
 ## 실행
 
@@ -10,7 +13,7 @@ cd backend
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-python -m pytest -q                # 테스트 19개 통과 확인
+python -m pytest -q                # 테스트 31개 통과 확인
 uvicorn app.main:app --reload      # http://127.0.0.1:8000/docs 에서 바로 호출해 볼 수 있다
 ```
 
@@ -37,6 +40,7 @@ uvicorn app.main:app --reload
 - `LLM_MODEL`: 기본 `claude-haiku-5-5`
 - `LLM_PROVIDER`: `anthropic`(기본) 또는 `ollama`
 - `OLLAMA_URL`, `OLLAMA_MODEL`, `OLLAMA_TIMEOUT`: `LLM_PROVIDER=ollama`일 때만 사용 (기본 `http://localhost:11434`, `qwen2.5:7b`, 120초)
+- `JUDGE_MAX_PER_SESSION`: 세션 하나에서 AI 판단을 부를 수 있는 최대 횟수 (기본 120, 넘으면 429)
 - `METRICS_TOKEN`: 지표 API(`/metrics`) 비밀번호. 비워두면 지표 API는 닫힌다. 팀만 알고, 프론트에 넣지 않는다
 
 ## 프론트 연동 규칙
@@ -52,6 +56,11 @@ uvicorn app.main:app --reload
 | 메서드 | 경로 | 하는 일 |
 | --- | --- | --- |
 | GET | `/health` | 서버 확인 |
+| POST | `/sessions` | 할 일 한 줄로 집중 세션 시작 (**새 핵심**) |
+| GET | `/sessions/current` | 진행 중인 세션 (없으면 `null`) |
+| POST | `/sessions/{id}/end` | 세션 종료 (`completed` / `stopped`) |
+| POST | `/judge` | 영상 제목이 할 일과 관련 있는지 AI 판단 (**새 핵심**) |
+| POST | `/judge/feedback` | "아니? 전혀~" 정정. 이 세션에서 이 영상은 공부로 인정 |
 | POST | `/tasks/parse` | 자연어 목록 → 할 일 초안 (저장 안 함) |
 | POST | `/tasks/batch` | 초안 여러 개를 한 번에 저장 |
 | POST | `/tasks` | 일 하나 저장 |
@@ -64,11 +73,55 @@ uvicorn app.main:app --reload
 | GET | `/metrics?since=&until=` | 사용자 검증 지표 (팀 전용, `X-Metrics-Token`) |
 | GET | `/metrics/events.csv` | 익명화한 원본 이벤트 CSV (팀 전용) |
 
+## 새 흐름: 세션 → 영상 판단 → 정정
+
+### 1. 세션 시작: POST /sessions
+
+```json
+{"task": "전자기 유도 공부"}
+```
+
+응답 `{"id": 7, "task": "전자기 유도 공부", "started_at": "...", "ended_at": null, "end_reason": null, "active": true}`.
+진행 중인 세션이 있으면 자동으로 끝낸다(`replaced`). 끝낼 때는 `POST /sessions/7/end` 본문 `{"reason": "completed"}` 또는 `{"reason": "stopped"}`.
+
+### 2. 영상 판단: POST /judge
+
+확장이 **새 영상을 관측했을 때 한 번만** 부른다 (몇 초마다 부르지 않는다).
+
+```json
+{"session_id": 7, "title": "패러데이 법칙 10분 정리", "video_id": "abcdefghijk"}
+```
+
+응답:
+
+```json
+{"related": true, "reason": "같은 과목 개념 설명", "source": "ai", "cached": false}
+```
+
+- `related`: `true` 공부 · `false` 딴짓 · `null` 판단 불가(Study With Me, 공부 음악 등) → **개입하지 않는다**
+- `source`: `ai`(이번에 AI가 판단) · `ai`/`user` + `cached: true`(같은 세션에서 이미 판단한 영상, AI 호출 없음)
+- 보내는 것은 **할 일 한 줄 + 영상 제목**뿐. URL·채널·계정은 보내지 않는다
+- 서버는 **제목을 저장하지 않는다.** 영상 ID(없으면 제목)의 해시와 판단 결과만 저장한다
+- 오류: `404` 세션 없음 · `409` 끝난 세션 · `429` 세션당 AI 호출 한도 초과 · `502` AI 응답 이상 · `503` API 키 없음
+  → 오류일 때는 로컬 키워드 판단으로 대신하거나 개입하지 않는다
+
+### 3. 정정: POST /judge/feedback
+
+"너 혹시 딴짓해?"에서 **아니? 전혀~** 를 눌렀을 때.
+
+```json
+{"session_id": 7, "title": "패러데이 법칙 10분 정리", "video_id": "abcdefghijk", "related": true}
+```
+
+이 세션에서 같은 영상은 다시 `related: true`로 돌려준다. 정정 횟수는 오탐 지표로 쓴다.
+
+**동의 문구에 꼭 넣을 것:** "집중 세션 중 보고 있는 유튜브 영상 제목과 할 일 한 줄을 AI(Claude)에 보내 공부 관련인지 판단합니다. 제목은 저장하지 않습니다."
+
 ## 사용자 검증 지표
 
 ### 이벤트는 누가 남기나
 
-서버가 자동으로 남기는 것: `parse_requested` / `parse_succeeded` / `parse_failed`, `tasks_saved`, `task_done` / `task_undone`, `wasted`
+서버가 자동으로 남기는 것: `session_started` / `session_ended`, `judge_requested`(AI/캐시) / `judge_failed` / `judge_corrected`, 그리고 기존 `parse_*`, `tasks_saved`, `task_done` / `task_undone`, `wasted`
 
 **프론트가 `POST /events`로 보내야 하는 것** (`X-User-Id` 헤더 포함, 응답 204):
 
@@ -83,6 +136,11 @@ uvicorn app.main:app --reload
 | `checkin_answered` | 말풍선 응답 | 선택 | `{"answer": "confess" \| "studying" \| "rest" \| "later"}` |
 | `manual_input_used` | AI 대신 직접 입력 폼으로 저장 | - | |
 | `feedback_opened` | 피드백 링크 클릭 | - | |
+| `distraction_detected` | 딴짓으로 판단돼 시간이 쌓이기 시작함 | - | `{"site": "youtube"}` |
+| `intervention_shown` | 안뇽이 개입 | - | `{"stage": "face" \| "bubble" \| "mission", "variant": "애니메이션 이름"}` |
+| `intervention_answered` | 개입에 대한 응답 | - | `{"answer": "yes" \| "not_distracted" \| "none"}` (none = 무응답) |
+| `returned` | 공부로 돌아옴 | - | `{"seconds": 95}` (개입부터 복귀까지) |
+| `widget_hidden` | 잠깐 숨기기 | - | `{"duration": "30m" \| "1h" \| "today"}` |
 
 ```json
 POST /events
@@ -99,6 +157,20 @@ curl -H "X-Metrics-Token: $METRICS_TOKEN" "https://서버주소/metrics/events.c
 ```
 
 모든 비율은 `numerator`(분자), `denominator`(분모), `rate`를 함께 준다.
+
+**새 핵심 지표는 `focus` 안에 있다.**
+
+- `focus.funnel`: 접속 → 세션 시작 → 안뇽이 개입 → 공부로 복귀 단계별 사용자 수와 이탈률
+- `focus.return_after_intervention`: 개입 후 10분 안에(다음 개입 전에) 복귀한 비율 (**개입 후 복귀율**)
+- `focus.median_return_seconds`: 복귀까지 걸린 시간의 중앙값
+- `focus.ignored`: 개입에 무응답한 비율 (**무시율**)
+- `focus.false_positive`: 응답 중 "아니? 전혀~" 비율 (**오탐률**)
+- `focus.by_variant`: 애니메이션별 개입 수와 복귀율 (어떤 반응이 잘 먹히는지 비교)
+- `focus.hidden`: 잠깐 숨기기 사용 수 (30m / 1h / today)
+- `focus.judge`: AI 호출 수, 캐시 재사용 수, 사용자 정정 수
+- `focus.sessions`: 세션 시작 수, 종료 이유별 수
+
+아래는 기존(할 일 기반) 지표다.
 
 - `funnel`: 접속 → 할 일 저장 → 계획 확인 → 작업 시작 → 작업 완료 단계별 사용자 수, 이전 단계 대비 전환율과 **이탈률**
 - `core_completion`: 접속한 사용자 중 작업 완료까지 간 비율 (**핵심 기능 완료율**)

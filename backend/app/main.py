@@ -13,11 +13,11 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 
-from . import db, metrics, nlp, planner
-from .schemas import (EventIn, ParseIn, SettingsIn, TaskBatchCreate, TaskCreate, TaskUpdate,
-                      WastedIn)
+from . import db, judge, metrics, nlp, planner
+from .schemas import (EventIn, JudgeFeedbackIn, JudgeIn, ParseIn, SessionEnd, SessionIn,
+                      SettingsIn, TaskBatchCreate, TaskCreate, TaskUpdate, WastedIn)
 
-app = FastAPI(title="바꿔도 돼? API", version="0.3.0")
+app = FastAPI(title="바꿔도 돼? API", version="0.4.0")
 
 origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["*"], allow_headers=["*"])
@@ -143,6 +143,81 @@ def wasted(body: WastedIn, user: str = Depends(get_user), conn=Depends(get_conn)
     db.log_event(conn, user, "wasted", None, {"minutes": body.wasted_minutes})
     return planner.wasted_preview(db.planner_tasks(conn, user), resolve_now(body.now),
                                   body.wasted_minutes, db.get_daily_minutes(conn, user))
+
+
+# ---------- 집중 세션과 영상 판단 ----------
+
+def _active_session(conn, user: str, session_id: int) -> dict:
+    s = db.get_session(conn, user, session_id)
+    if not s:
+        raise HTTPException(404, "세션을 찾을 수 없어요")
+    if not s["active"]:
+        raise HTTPException(409, "이미 끝난 세션이에요")
+    return s
+
+
+@app.post("/sessions", status_code=201)
+def start_session(body: SessionIn, user: str = Depends(get_user), conn=Depends(get_conn)):
+    """지금 할 일 한 줄로 집중 세션을 시작한다. 진행 중인 세션은 자동으로 끝낸다."""
+    return db.start_session(conn, user, body.task.strip())
+
+
+@app.get("/sessions/current")
+def current_session(user: str = Depends(get_user), conn=Depends(get_conn)):
+    """진행 중인 세션. 없으면 null."""
+    return db.current_session(conn, user)
+
+
+@app.post("/sessions/{session_id}/end")
+def end_session(session_id: int, body: SessionEnd | None = None, user: str = Depends(get_user),
+                conn=Depends(get_conn)):
+    s = db.end_session(conn, user, session_id, (body or SessionEnd()).reason)
+    if not s:
+        raise HTTPException(404, "세션을 찾을 수 없어요")
+    return s
+
+
+@app.post("/judge")
+def judge_video(body: JudgeIn, user: str = Depends(get_user), conn=Depends(get_conn)):
+    """영상이 세션의 할 일과 관련 있는지. related: true(공부) / false(딴짓) / null(판단 불가 → 개입 안 함).
+    제목은 AI 판단에만 쓰고 저장하지 않는다. 같은 세션의 같은 영상은 저장된 결과를 돌려준다."""
+    s = _active_session(conn, user, body.session_id)
+    key = judge.video_key(body.video_id, body.title)
+    cached = db.get_judgment(conn, s["id"], key)
+    if cached:
+        db.log_event(conn, user, "judge_requested", None,
+                     {"session_id": s["id"], "source": "cache", "related": cached["related"]})
+        return {**cached, "cached": True}
+
+    limit = int(os.getenv("JUDGE_MAX_PER_SESSION", "120"))
+    if db.session_ai_calls(conn, s["id"]) >= limit:
+        raise HTTPException(429, "이 세션에서 AI 판단 횟수를 다 썼어요")
+    try:
+        result = judge.judge_title(s["task"], body.title)
+    except nlp.NotConfigured as e:
+        raise HTTPException(503, str(e))
+    except nlp.ParseError as e:
+        db.log_event(conn, user, "judge_failed", None, {"session_id": s["id"]})
+        raise HTTPException(502, str(e))
+    db.save_judgment(conn, s["id"], key, result["related"], "ai", result["reason"],
+                     count_ai_call=True)
+    db.log_event(conn, user, "judge_requested", None,
+                 {"session_id": s["id"], "source": "ai", "related": result["related"]})
+    return {**result, "source": "ai", "cached": False}
+
+
+@app.post("/judge/feedback")
+def judge_feedback(body: JudgeFeedbackIn, user: str = Depends(get_user), conn=Depends(get_conn)):
+    """"아니? 전혀~": 이 세션에서 이 영상은 공부로 보고 다시 묻지 않는다."""
+    s = _active_session(conn, user, body.session_id)
+    key = judge.video_key(body.video_id, body.title)
+    before = db.get_judgment(conn, s["id"], key)
+    db.save_judgment(conn, s["id"], key, body.related, "user", "사용자가 정정함")
+    db.log_event(conn, user, "judge_corrected", None,
+                 {"session_id": s["id"], "related": body.related,
+                  "previous": before["related"] if before else None,
+                  "previous_source": before["source"] if before else None})
+    return {"related": body.related, "reason": "사용자가 정정함", "source": "user", "cached": True}
 
 
 # ---------- 사용자 검증 지표 ----------

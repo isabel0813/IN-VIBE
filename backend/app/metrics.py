@@ -22,12 +22,22 @@ CLIENT_EVENTS = {
     "checkin_answered",  # 말풍선 응답 (payload.answer: confess | studying | rest | later)
     "manual_input_used", # AI 대신 직접 입력 폼 사용
     "feedback_opened",   # 피드백 링크 클릭
+    # --- 딴짓 감지 → 안뇽이 개입 → 복귀 (세션 기반) ---
+    "distraction_detected",   # 딴짓으로 판단돼 시간이 쌓이기 시작함 (payload.site: "youtube")
+    "intervention_shown",     # 안뇽이 개입 (payload.stage: face|bubble|mission, payload.variant: 애니메이션 이름)
+    "intervention_answered",  # 응답 (payload.answer: yes | not_distracted | none)
+    "returned",               # 공부로 돌아옴 (payload.seconds: 개입부터 복귀까지 초)
+    "widget_hidden",          # 잠깐 숨기기 (payload.duration: 30m | 1h | today)
 }
 # 서버가 자동으로 남기는 이벤트
 SERVER_EVENTS = {
     "parse_requested", "parse_succeeded", "parse_failed",
     "tasks_saved", "task_done", "task_undone", "wasted",
+    "session_started", "session_ended",
+    "judge_requested", "judge_failed", "judge_corrected",
 }
+
+RETURN_WINDOW = timedelta(minutes=10)
 
 FUNNEL = [
     ("visited", "접속", {"app_open"}),
@@ -132,6 +142,8 @@ def compute(events: list[dict], tasks: list[dict], now: datetime) -> dict:
     parse_ok = sum(1 for e in events if e["type"] == "parse_succeeded")
     manual = sum(1 for e in events if e["type"] == "manual_input_used")
 
+    focus = _focus_metrics(by_user, events)
+
     first = events[0]["created_at"].isoformat() if events else None
     last = events[-1]["created_at"].isoformat() if events else None
 
@@ -159,4 +171,98 @@ def compute(events: list[dict], tasks: list[dict], now: datetime) -> dict:
                     "response_rate": _ratio(sum(answers.values()), shown)},
         "returning_users": _ratio(returning, len(users)),
         "parse": {"success": _ratio(parse_ok, parse_req), "manual_input_used": manual},
+        "focus": focus,
+    }
+
+
+def _median(values: list[float]) -> float | None:
+    if not values:
+        return None
+    s = sorted(values)
+    mid = len(s) // 2
+    return float(s[mid]) if len(s) % 2 else (s[mid - 1] + s[mid]) / 2
+
+
+def _focus_metrics(by_user: dict[str, list[dict]], events: list[dict]) -> dict:
+    """딴짓 감지 → 안뇽이 개입 → 복귀 흐름의 지표 (새 핵심 지표)."""
+    # 퍼널: 접속 → 세션 시작 → 개입 받음 → 복귀
+    steps = [("visited", "접속", {"app_open"}),
+             ("session_started", "세션 시작", {"session_started"}),
+             ("intervened", "안뇽이 개입", {"intervention_shown"}),
+             ("returned", "공부로 복귀", {"returned"})]
+    funnel, prev = [], None
+    for key, label, types in steps:
+        reached = {u for u, evs in by_user.items() if any(e["type"] in types for e in evs)}
+        step = {"step": key, "label": label, "users": len(reached)}
+        if prev is not None:
+            kept = len(reached & prev)
+            step["conversion_from_previous"] = _ratio(kept, len(prev))
+            step["drop_off_from_previous"] = _ratio(len(prev) - kept, len(prev))
+        funnel.append(step)
+        prev = reached
+
+    # 개입 후 복귀: 개입마다 다음 개입 전, 10분 안에 returned가 왔는지
+    shown = returned = 0
+    seconds = []
+    for evs in by_user.values():
+        for i, e in enumerate(evs):
+            if e["type"] != "intervention_shown":
+                continue
+            shown += 1
+            for n in evs[i + 1:]:
+                if n["created_at"] - e["created_at"] > RETURN_WINDOW or n["type"] == "intervention_shown":
+                    break
+                if n["type"] == "returned":
+                    returned += 1
+                    sec = (n.get("payload") or {}).get("seconds")
+                    if isinstance(sec, (int, float)) and sec >= 0:
+                        seconds.append(sec)
+                    break
+
+    answers = defaultdict(int)
+    variants = defaultdict(lambda: {"shown": 0, "returned": 0})
+    for evs in by_user.values():
+        for i, e in enumerate(evs):
+            if e["type"] == "intervention_answered":
+                answers[str((e.get("payload") or {}).get("answer", "unknown"))] += 1
+            if e["type"] == "intervention_shown":
+                v = str((e.get("payload") or {}).get("variant", "default"))
+                variants[v]["shown"] += 1
+                for n in evs[i + 1:]:
+                    if n["created_at"] - e["created_at"] > RETURN_WINDOW or n["type"] == "intervention_shown":
+                        break
+                    if n["type"] == "returned":
+                        variants[v]["returned"] += 1
+                        break
+    answered = answers.get("yes", 0) + answers.get("not_distracted", 0)
+
+    hidden = defaultdict(int)
+    for e in events:
+        if e["type"] == "widget_hidden":
+            hidden[str((e.get("payload") or {}).get("duration", "unknown"))] += 1
+
+    judge_ai = sum(1 for e in events if e["type"] == "judge_requested"
+                   and (e.get("payload") or {}).get("source") == "ai")
+    judge_cache = sum(1 for e in events if e["type"] == "judge_requested"
+                      and (e.get("payload") or {}).get("source") == "cache")
+    corrected = sum(1 for e in events if e["type"] == "judge_corrected")
+    sessions = sum(1 for e in events if e["type"] == "session_started")
+    end_reasons = defaultdict(int)
+    for e in events:
+        if e["type"] == "session_ended":
+            end_reasons[str((e.get("payload") or {}).get("reason", "unknown"))] += 1
+
+    return {
+        "funnel": funnel,
+        "sessions": {"started": sessions, "ended": dict(end_reasons)},
+        "interventions": shown,
+        "return_after_intervention": _ratio(returned, shown),
+        "median_return_seconds": _median(seconds),
+        "answers": dict(answers),
+        "ignored": _ratio(answers.get("none", 0), shown),
+        "false_positive": _ratio(answers.get("not_distracted", 0), answered),
+        "by_variant": {v: {**c, "return_rate": _ratio(c["returned"], c["shown"])["rate"]}
+                       for v, c in variants.items()},
+        "hidden": dict(hidden),
+        "judge": {"ai_calls": judge_ai, "cache_hits": judge_cache, "corrections": corrected},
     }

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -41,6 +42,28 @@ class EventIn(BaseModel):
     type: str = Field(min_length=1, max_length=40, description="metrics.CLIENT_EVENTS 중 하나")
     task_id: int | None = None
     payload: dict = Field(default_factory=dict, description="작은 부가 정보. 개인정보·창 제목은 넣지 않는다")
+
+
+class SessionIn(BaseModel):
+    task: str = Field(min_length=1, max_length=100, description="지금 할 일 한 줄. 예: 전자기 유도 공부")
+
+
+class SessionEnd(BaseModel):
+    reason: Literal["completed", "stopped"] = "stopped"
+
+
+class JudgeIn(BaseModel):
+    session_id: int
+    title: str = Field(min_length=1, max_length=400, description="유튜브 영상 제목. 서버에 저장하지 않는다")
+    video_id: str | None = Field(None, pattern=r"^[A-Za-z0-9_-]{11}$",
+                                 description="11자 영상 ID. 같은 영상 판단을 재사용하는 데만 쓴다")
+
+
+class JudgeFeedbackIn(BaseModel):
+    session_id: int
+    title: str = Field(min_length=1, max_length=400)
+    video_id: str | None = Field(None, pattern=r"^[A-Za-z0-9_-]{11}$")
+    related: bool = Field(True, description='"아니? 전혀~" → true (공부 맞음)')
 
 
 class SettingsIn(BaseModel):
