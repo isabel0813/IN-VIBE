@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import ssl
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
@@ -71,13 +72,22 @@ def build_user_message(text: str, now: datetime) -> str:
     )
 
 
+def _ssl_context() -> ssl.SSLContext:
+    """맥의 python.org 파이썬은 인증서 목록이 없어 HTTPS가 실패할 수 있다. certifi가 있으면 그걸 쓴다."""
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
+
 def _post_json(url: str, payload: dict, headers: dict, timeout: int) -> dict:
     req = urllib.request.Request(
         url, data=json.dumps(payload).encode("utf-8"), method="POST",
         headers={"content-type": "application/json", **headers},
     )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout, context=_ssl_context()) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", "replace")[:300]
