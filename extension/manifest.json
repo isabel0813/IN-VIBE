@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "안뇽이 · YouTube 공부 확인",
+  "version": "0.3.0",
+  "description": "동의한 집중 세션에서 선택된 YouTube 영상의 제목과 재생 상태만 로컬 안뇽이에 전달합니다.",
+  "minimum_chrome_version": "105",
+  "permissions": [
+    "nativeMessaging",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://www.youtube.com/*"
+  ],
+  "background": {
+    "service_worker": "worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "안뇽이 연결"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.youtube.com/*"
+      ],
+      "js": [
+        "observer.js",
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; connect-src 'none'"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAo6lUJplN0fKfR/r+CVyE/pDeis80zivwiJu/uKLPn/afNVt0+LpdLmfp7PwwJJBsGcD3Xihp5zkGsRteNYMF7BC6UKKhMn2/1fW4o0EcTkCAjXaeEnUhrOTjYD62MrFLj4m8REjHIs/C4U6ykdtPKHzuhDE1JlmcFl8EubzS502+1jRd0639M4tlrKQTVYPX4zCMQe6RlQe9NP92riaoS7HWze+20fbq0EeNflWeBrFbTsvkouXZjSmA2s3VKcbAAERutpdPSvIekMin4ernlrToxJUvzjMmmnhjU2nUhn07wDD+7yocU/Lu2KtCEs7FqDAj0jgv3C3YklkUQdNhvQIDAQAB"
+}
