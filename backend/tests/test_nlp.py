@@ -83,7 +83,7 @@ class FakeResp:
 def test_ollama_request_and_response(monkeypatch):
     sent = {}
 
-    def fake_urlopen(req, timeout):
+    def fake_urlopen(req, timeout, context=None):
         sent["url"] = req.full_url
         sent["body"] = json.loads(req.data.decode("utf-8"))
         return FakeResp(json.dumps({"message": {"role": "assistant", "content": '{"tasks": []}'}}))
@@ -100,7 +100,7 @@ def test_ollama_request_and_response(monkeypatch):
 
 
 def test_ollama_not_running(monkeypatch):
-    def refuse(req, timeout):
+    def refuse(req, timeout, context=None):
         raise nlp.urllib.error.URLError("Connection refused")
 
     monkeypatch.setenv("LLM_PROVIDER", "ollama")
