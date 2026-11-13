@@ -26,11 +26,30 @@ test('SPA identity, unsupported Shorts and invisible pages fail closed', () => {
 test('pause, buffering, seek, ads, changed identity never count as playback', () => {
   const video = {paused:false,ended:false,seeking:false,readyState:4,playbackRate:1};
   let watchId='abcdefghijk', ads=false;
-  const watch={getAttribute:()=>watchId,querySelector:()=>({textContent:'전자기 유도 강의'})};
+  const watch={getAttribute:()=>watchId,querySelector:selector=>selector==="#movie_player"?player:({textContent:'전자기 유도 강의'})};
   const player={querySelector:()=>video,classList:{contains:()=>ads}};
-  const document={visibilityState:'visible',querySelector:selector=>selector.startsWith('ytd')?watch:player};
+  const document={visibilityState:'visible',querySelector:selector=>selector.startsWith('ytd') && selector.includes(watchId)?watch:null};
   assert.equal(AnnyongObserver.read(document,url).playing,true);
   for (const [key,value] of [['paused',true],['ended',true],['seeking',true],['readyState',2],['playbackRate',0]]) { const old=video[key]; video[key]=value; assert.equal(AnnyongObserver.read(document,url).playing,false); video[key]=old; }
   ads=true; assert.equal(AnnyongObserver.read(document,url).kind,'unavailable'); ads=false;
   watchId='zyxwvutsrqp'; assert.equal(AnnyongObserver.read(document,url).kind,'unavailable');
+});
+
+
+test('title fallback is SPA-bound and normalizes whitespace without reading page bodies', () => {
+  const video={paused:false,ended:false,seeking:false,readyState:4,playbackRate:1};
+  const player={querySelector:()=>video,classList:{contains:()=>false}};
+  const watch={getAttribute:()=> 'abcdefghijk',querySelector:s=>s==='#movie_player'?player:null};
+  let meta='전자기   유도 강의';
+  const doc={visibilityState:'visible',title:'(3) 전자기 유도 강의 - YouTube',querySelector:s=>s.startsWith('ytd')?watch:{getAttribute:()=>meta}};
+  assert.equal(AnnyongObserver.read(doc,url).title,'전자기 유도 강의');
+  meta='old video'; assert.equal(AnnyongObserver.read(doc,url).kind,'unavailable');
+});
+
+test('a numeric prefix in the actual video title is preserved',()=>{
+  const video={paused:false,ended:false,seeking:false,readyState:4,playbackRate:1};
+  const player={querySelector:()=>video,classList:{contains:()=>false}};
+  const watch={getAttribute:()=> 'abcdefghijk',querySelector:s=>s==='#movie_player'?player:{textContent:'(2) 전자기 유도 강의'}};
+  const doc={visibilityState:'visible',title:'(2) 전자기 유도 강의 - YouTube',querySelector:s=>s.startsWith('ytd')?watch:null};
+  assert.equal(AnnyongObserver.read(doc,url).title,'(2) 전자기 유도 강의');
 });

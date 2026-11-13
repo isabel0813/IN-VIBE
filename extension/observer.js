@@ -15,10 +15,18 @@
     const unavailable = { kind: "unavailable", videoId: null, title: "", playing: false };
     // Shorts can preload multiple players. Never guess the current player/title.
     if (!info || info.kind === "shorts" || document.visibilityState !== "visible") return unavailable;
-    const watch = document.querySelector('ytd-watch-flexy[video-id]');
-    const player = document.querySelector('#movie_player');
+    const watch = document.querySelector(`ytd-watch-flexy[video-id="${info.id}"]`);
+    const player = watch?.querySelector('#movie_player');
     const video = player?.querySelector('video');
-    const title = watch?.querySelector('h1.ytd-watch-metadata yt-formatted-string, #title h1 yt-formatted-string')?.textContent?.trim();
+    const titleElement = watch?.querySelector('h1.ytd-watch-metadata yt-formatted-string, #title h1 yt-formatted-string, h1.ytd-watch-metadata');
+    const normalize = value => value?.replace(/\s+/g, ' ').trim();
+    // The structured video name is a fallback only when the SPA page identity
+    // and document title agree, avoiding a stale title during navigation.
+    const metadata = document.querySelector('meta[itemprop="name"]')?.getAttribute('content');
+    const pageTitle = normalize(document.title?.replace(/ - YouTube$/, ''));
+    const pageTitles = [pageTitle, pageTitle?.replace(/^\(\d+\)\s*/, '')].filter(Boolean);
+    const title = normalize(titleElement?.textContent) || (pageTitles.includes(normalize(metadata)) ? normalize(metadata) : null);
+    if (title && pageTitles.length && !pageTitles.includes(title)) return unavailable;
     if (watch?.getAttribute('video-id') !== info.id || !video || !title || title.length > 400 || player.classList.contains('ad-showing')) return unavailable;
     return { kind: "watch", videoId: info.id, title,
       playing: !video.paused && !video.ended && !video.seeking && video.readyState >= 3 && video.playbackRate > 0 };

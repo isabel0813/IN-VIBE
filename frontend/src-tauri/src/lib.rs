@@ -2,6 +2,7 @@ mod activity;
 mod browser;
 mod geometry;
 mod session;
+mod visibility;
 
 use geometry::{Layout, PET};
 use session::{Action, Session};
@@ -177,12 +178,17 @@ fn activity_respond(
 
 #[tauri::command]
 fn browser_video(caller: WebviewWindow, state: State<'_, AppState>) -> Result<Option<annyong_native_protocol::Observation>> {
+    Ok(browser_videos(caller, state)?.into_iter().next())
+}
+#[tauri::command]
+fn browser_videos(caller: WebviewWindow, state: State<'_, AppState>) -> Result<Vec<annyong_native_protocol::Observation>> {
     allowed(&caller)?;
     let session = state.session.lock().map_err(|e| e.to_string())?;
     let detector = state.activity.lock().map_err(|e| e.to_string())?;
-    if !session.running || session.paused || !detector.view.consent { return Ok(None); }
+    if !session.running || session.paused || !detector.view.consent { return Ok(vec![]); }
     let browser = state.browser.lock().map_err(|e| e.to_string())?;
-    Ok(browser.active_video(activity_now()))
+    if !browser.view.consent || !browser.view.collecting { return Ok(vec![]); }
+    Ok(browser.visible_videos(activity_now(), &visibility::chrome_titles()))
 }
 #[tauri::command]
 fn browser_read(caller: WebviewWindow, state: State<'_, AppState>) -> Result<browser::BrowserView> {
@@ -431,10 +437,12 @@ pub fn run() {
                                 break;
                             };
                             browser.status(now, true);
-                            let decision = browser.choose(
+                            let titles = if browser.view.consent { visibility::chrome_titles() } else { vec![] };
+                            let decision = browser.choose_visible(
                                 &sample,
                                 session.task.as_ref().map(|t| t.name.as_str()).unwrap_or(""),
                                 now,
+                                &titles,
                             );
                             if matches!(decision, browser::Decision::Observe(..))
                                 && std::mem::take(&mut browser.discontinuous)
@@ -477,6 +485,7 @@ pub fn run() {
             activity_respond,
             browser_read,
             browser_video,
+            browser_videos,
             browser_configure,
             widget_read_layout,
             widget_bubble,

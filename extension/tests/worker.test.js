@@ -27,17 +27,17 @@ test("worker gates native access, selected tab, window focus, consent and discon
     interval(); await flush(); assert.equal(challenges.length,1);
     const payload={kind:"watch",videoId:"abcdefghijk",title:"게임 플레이",playing:true};
     const observation={type:"observation",nonce:challenges.at(-1).nonce,payload};
-    assert.equal((await request(observation,sender)).ok,true);
-    assert.equal(sent.filter(m=>m.type==="observation").length,1);
+    assert.equal((await request(observation,sender)).ok,true); await flush();
+    assert.equal(sent.filter(m=>m.type==="snapshot").length,1);
     assert.equal((await request(observation,sender)).ok,false); // replay
     interval(); await flush(); active=false; chrome.tabs.onActivated.emit();
     assert.equal((await request({...observation,nonce:challenges.at(-1).nonce},sender)).ok,false);
     active=true; focused=false; chrome.windows.onFocusChanged.emit(); interval(); await flush();
-    assert.equal(sent.at(-1).type,"clear");
-    focused=true; minimized=true; interval(); await flush(); assert.equal(sent.at(-1).type,"clear");
+    assert.equal(challenges.length,3);
+    await request({...observation,nonce:challenges.at(-1).nonce},sender); await flush(); focused=true; minimized=true; interval(); await flush(); assert.equal(sent.at(-1).type,"snapshot"); assert.deepEqual(sent.at(-1).observations,[]);
     minimized=false; await request({type:"enable",enabled:false},popup);
     const count=challenges.length; interval(); await flush(); assert.equal(challenges.length,count);
     assert.equal((await request({type:"status"},popup)).connected,false);
-    assert.equal(sent.filter(m=>m.type==="observation").length,1);
+    assert.equal(sent.filter(m=>m.type==="snapshot").length,3);
   } finally {globalThis.setInterval=oldInterval;delete globalThis.chrome;}
 });

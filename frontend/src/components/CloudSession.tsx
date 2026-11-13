@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { api } from "../api/client";
 import { isDesktop, showWidget } from "../desktop/bridge";
 import { sessionStore, useFocusSession } from "../session/store";
+import { backgroundVideo, shouldAsk } from "./videoPolicy";
+import type { Judgment } from "./videoPolicy";
 
 const KEY = "mobonyong.cloud-session";
 const TASK_OFFSET = 1_000_000_000_000;
@@ -15,6 +17,15 @@ function write(value: CloudState | null) {
   if (value) localStorage.setItem(KEY, JSON.stringify(value));
   else localStorage.removeItem(KEY);
   window.dispatchEvent(new Event(KEY));
+}
+function dismiss(value: CloudState) {
+  const current = read();
+  if (current?.id !== value.id) return;
+  const old = JSON.parse(localStorage.getItem(`${KEY}.dismissed`) || "null");
+  const videos = old?.id === value.id ? old.videos : [];
+  localStorage.setItem(`${KEY}.dismissed`, JSON.stringify({ id: value.id, videos: [...new Set([...videos, value.ask?.video_id])] }));
+  if (current.ask?.video_id !== value.ask?.video_id) return;
+  write({ ...current, ask: null });
 }
 export function useCloudSession() {
   const [value, setValue] = useState(read);
@@ -30,13 +41,15 @@ export function CloudQuestion() {
   const value = useCloudSession();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const lock = useRef(false);
   if (!value?.ask) return null;
   return <section role="status" className="cloud-question"><strong>안뇽이 · 너 혹시 딴짓해?</strong><p>{value.ask.title}</p><p>{value.reason} · AI의 추정이에요.</p>
     <button disabled={busy} onClick={async () => {
-      setBusy(true); setError("");
-      try { await api.feedback(value.id, value.ask!); if (read()?.id === value.id) write({ ...value, ask: null }); }
-      catch (e) { setError(String(e)); } finally { setBusy(false); }
-    }}>아니? 전혀~</button><button disabled={busy} onClick={() => write({ ...value, ask: null })}>맞아, 공부로 돌아갈게</button>
+      if (lock.current) return;
+      lock.current = true; setBusy(true); setError("");
+      try { await api.feedback(value.id, value.ask!); dismiss(value); }
+      catch (e) { setError(String(e)); } finally { lock.current = false; setBusy(false); }
+    }}>아니? 전혀~</button><button disabled={busy} onClick={() => dismiss(value)}>맞아, 공부로 돌아갈게</button>
     {error && <p role="alert">{error}</p>}
   </section>;
 }
@@ -47,7 +60,9 @@ export default function CloudSession() {
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const seen = useRef(new Set<string>());
+  const judgments = useRef(new Map<string, Judgment | null>());
+  const dismissed = useRef(new Set<string>());
+  const startLock = useRef(false);
   const active = useRef<number | null>(null);
   // Relaunch never silently resumes a server session or cloud transmission.
   useEffect(() => { write(null); }, []);
@@ -60,7 +75,10 @@ export default function CloudSession() {
   }, [session.running, session.task?.id, value]);
   useEffect(() => {
     active.current = value?.id ?? null;
-    if (!value || !consent || !isDesktop() || !session.running || session.paused) return;
+    if (!value || !consent || !isDesktop() || !session.running || session.paused) {
+      if (value?.ask) write({ ...value, ask: null });
+      return;
+    }
     let cancelled = false;
     let reading = false;
     const id = value.id;
@@ -68,41 +86,52 @@ export default function CloudSession() {
       if (reading) return;
       reading = true;
       try {
-        const video = await invoke<{ title: string; videoId: string } | null>("browser_video");
-        if (!video || cancelled) return;
-        const key = `${id}:${video.videoId}`;
-        if (seen.current.has(key)) return;
-        seen.current.add(key);
-        const payload = { title: video.title, video_id: video.videoId };
-        const result = await api.judge(id, payload);
-        const currentVideo = await invoke<{ videoId: string } | null>("browser_video");
-        if (!currentVideo || currentVideo.videoId !== video.videoId) return;
-        if (!cancelled && active.current === id && read()?.id === id) {
-          if (result.action !== "ask" && result.action !== "ignore") throw new Error("AI 응답 형식을 확인해 주세요.");
-          const current = read()!;
-          write({ ...current, ask: result.action === "ask" ? payload : null, reason: result.reason });
-          setError("");
+        const videos = await invoke<{ title: string; videoId: string }[]>("browser_videos");
+        if (cancelled || active.current !== id || read()?.id !== id) return;
+        const dismissedValue = JSON.parse(localStorage.getItem(`${KEY}.dismissed`) || "null");
+        if (dismissedValue?.id === id) for (const video of dismissedValue.videos) dismissed.current.add(video);
+        const eligible = videos.filter(video => !backgroundVideo(video.title));
+        for (const video of eligible) {
+          const key = `${id}:${video.videoId}`;
+          if (judgments.current.has(key) || dismissed.current.has(video.videoId)) continue;
+          judgments.current.set(key, null);
+          // Keep sampling during slow AI requests so hidden/paused videos dismiss
+          // immediately. A cached result can be used when a video becomes visible again.
+          void api.judge(id, { title: video.title, video_id: video.videoId }).then(result => {
+            if (result.action !== "ask" && result.action !== "ignore") throw new Error("AI 응답 형식을 확인해 주세요.");
+            judgments.current.set(key, result);
+            if (!cancelled) void poll();
+          }).catch(e => { if (!cancelled) setError(`영상 판단 실패 · 자동 재시도 중지. ${String(e)}`); });
         }
+        const current = read()!;
+        const asking = eligible.filter(video => {
+          const result = judgments.current.get(`${id}:${video.videoId}`);
+          return result && !dismissed.current.has(video.videoId) && shouldAsk({ title: video.title, video_id: video.videoId }, result);
+        });
+        const next = asking.find(video => video.videoId === current.ask?.video_id) ?? asking[0];
+        const ask = next ? { title: next.title, video_id: next.videoId } : null;
+        if (current.ask?.video_id !== ask?.video_id) write({ ...current, ask, reason: next ? judgments.current.get(`${id}:${next.videoId}`)!.reason : "" });
       } catch (e) { if (!cancelled) setError(`영상 판단 실패 · 이 영상의 자동 재시도는 멈췄어요. ${String(e)}`); }
       finally { reading = false; }
     }
-    void poll(); const timer = setInterval(() => void poll(), 2000);
+    void poll(); const timer = setInterval(() => void poll(), 1000);
     return () => { cancelled = true; clearInterval(timer); };
   }, [value?.id, consent, session.running, session.paused]);
   async function start() {
-    if (busy || !task.trim()) return;
+    if (startLock.current || busy || !task.trim()) return;
+    startLock.current = true;
     setBusy(true); setError("");
     let created: { id: number; task: string } | null = null;
     try {
       created = await api.startSession(task.trim());
       await sessionStore.send({ type: "start", task: { id: TASK_OFFSET + created.id, name: created.task } });
-      seen.current.clear();
+      judgments.current.clear(); dismissed.current.clear(); localStorage.removeItem(`${KEY}.dismissed`);
       write({ ...created, ask: null, reason: "" });
       if (isDesktop()) await showWidget(true);
     } catch (e) {
       if (created && !read()) await api.endSession(created.id).catch(() => {});
       setError(String(e));
-    } finally { setBusy(false); }
+    } finally { startLock.current = false; setBusy(false); }
   }
   return <section className="cloud-session" aria-label="한 줄 집중 세션">
     <h2>지금 뭐 공부하뇽?</h2>

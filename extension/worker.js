@@ -1,5 +1,6 @@
 import { HOST, youtubeUrl, validateObservation, validStatus } from "./protocol.js";
-let enabled = false, port = null, pending = null, epoch = 0, seq = 0, retryAt = 0;
+let enabled = false, port = null, epoch = 0, seq = 0, retryAt = 0, reading = false;
+const pending = new Map();
 let status = { type: "status", connected: false, collecting: false, generation: 0 };
 const loaded = chrome.storage.local.get("enabled").then(value => { enabled = value.enabled === true; });
 function send(type, extra = {}) {
@@ -7,9 +8,14 @@ function send(type, extra = {}) {
   try { port.postMessage({ version: 1, type, generation: status.generation, seq: ++seq, ...extra }); }
   catch { disconnect(); }
 }
-function clear() { epoch++; pending = null; send("clear"); }
+function cancel() {
+  epoch++;
+  for (const challenge of pending.values()) challenge.finish(null);
+  pending.clear();
+}
+function clear() { cancel(); send("clear"); }
 function disconnect() {
-  pending = null; epoch++; status = { type: "status", connected: false, collecting: false, generation: 0 };
+  cancel(); status = { type: "status", connected: false, collecting: false, generation: 0 };
   const old = port; port = null; old?.disconnect(); retryAt = Date.now() + 5000;
 }
 function connect() {
@@ -19,32 +25,46 @@ function connect() {
     current.onMessage.addListener(value => {
       if (port !== current) return;
       if (!validStatus(value)) { disconnect(); return; }
-      if (!value.collecting || value.generation !== status.generation) { pending = null; epoch++; }
+      if (!value.collecting || value.generation !== status.generation) cancel();
       status = { type: "status", connected: value.connected, collecting: value.collecting, generation: value.generation };
     });
     current.onDisconnect.addListener(() => { void chrome.runtime.lastError; if (port === current) disconnect(); });
   } catch { disconnect(); }
 }
+function observe(tab, stamp) {
+  return new Promise(resolve => {
+    const nonce = crypto.randomUUID();
+    const timer = setTimeout(() => finish(null), 1800);
+    function finish(value) { clearTimeout(timer); pending.delete(nonce); resolve(value); }
+    pending.set(nonce, { nonce, tabId: tab.id, windowId: tab.windowId, url: tab.url, epoch: stamp, finish });
+    void chrome.tabs.sendMessage(tab.id, { type: "observe", nonce }, { frameId: 0 }).catch(() => finish(null));
+  });
+}
 async function tick() {
   await loaded;
   if (!enabled) return;
   connect(); send("heartbeat");
-  if (!status.collecting || !status.connected || pending) return;
+  if (!status.collecting || !status.connected || reading) return;
+  reading = true;
   const stamp = epoch;
   try {
-    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    const window = tab && await chrome.windows.get(tab.windowId);
+    // active is per-window. Focus is deliberately not required for split screens.
+    const tabs = await chrome.tabs.query({ active: true, url: "https://www.youtube.com/*" });
+    const eligible = [];
+    for (const tab of tabs) {
+      const window = await chrome.windows.get(tab.windowId);
+      if (window.state !== "minimized" && youtubeUrl(tab.url)) eligible.push(tab);
+    }
     if (stamp !== epoch) return;
-    if (!tab || !window.focused || window.state === "minimized" || !youtubeUrl(tab.url)) { clear(); return; }
-    pending = { nonce: crypto.randomUUID(), tabId: tab.id, windowId: tab.windowId, url: tab.url, epoch: stamp, expires: Date.now() + 2000 };
-    await chrome.tabs.sendMessage(tab.id, { type: "observe", nonce: pending.nonce }, { frameId: 0 });
+    // Four windows keep worst-case UTF-8 frames below the native 8192-byte limit.
+    const observations = await Promise.all(eligible.slice(0, 4).map(tab => observe(tab, stamp)));
+    if (stamp === epoch && enabled && status.collecting) send("snapshot", { observations: observations.filter(o => o?.playing) });
   } catch { clear(); }
+  finally { reading = false; }
 }
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
   void (async () => {
     await loaded;
-    // Chrome can include sender.tab when our own settings page is opened as a tab.
-    // Its exact extension URL (never a YouTube content-script URL) remains mandatory.
     if (sender.id === chrome.runtime.id && sender.url === chrome.runtime.getURL("popup.html") && (sender.frameId === undefined || sender.frameId === 0)) {
       if (message?.type === "enable" && typeof message.enabled === "boolean") {
         enabled = message.enabled; await chrome.storage.local.set({ enabled });
@@ -52,14 +72,16 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       }
       reply({ enabled, ...status, extensionId: chrome.runtime.id }); return;
     }
-    const challenge = pending;
+    const challenge = pending.get(message?.nonce);
     const observation = enabled && status.collecting ? validateObservation(message, sender, chrome.runtime.id, challenge) : null;
-    if (!observation || challenge.expires < Date.now()) { reply({ ok: false }); return; }
-    pending = null; // consume nonce before any asynchronous recheck
-    const tab = await chrome.tabs.get(challenge.tabId);
-    const window = await chrome.windows.get(challenge.windowId);
-    if (!enabled || !status.collecting || epoch !== challenge.epoch || !tab.active || tab.url !== challenge.url || !window.focused || window.state === "minimized") { reply({ ok: false }); return; }
-    send("observation", { observation }); reply({ ok: true });
+    if (!observation) { reply({ ok: false }); return; }
+    pending.delete(challenge.nonce); // consume before async validation, rejecting replay
+    try {
+      const tab = await chrome.tabs.get(challenge.tabId);
+      const window = await chrome.windows.get(challenge.windowId);
+      const valid = enabled && status.collecting && epoch === challenge.epoch && tab.active && tab.url === challenge.url && window.state !== "minimized";
+      challenge.finish(valid ? observation : null); reply({ ok: valid });
+    } catch { challenge.finish(null); reply({ ok: false }); }
   })().catch(() => { clear(); reply({ ok: false }); });
   return true;
 });
@@ -68,8 +90,5 @@ chrome.tabs.onRemoved.addListener(clear);
 chrome.tabs.onUpdated.addListener((_id, change) => { if (change.url || change.status === "loading") clear(); });
 chrome.windows.onFocusChanged.addListener(clear);
 chrome.windows.onRemoved.addListener(clear);
-setInterval(() => {
-  if (pending && pending.expires < Date.now()) clear();
-  void tick();
-}, 1000);
+setInterval(() => void tick(), 1000);
 void loaded.then(tick);

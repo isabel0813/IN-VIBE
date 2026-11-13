@@ -10,9 +10,20 @@ pub struct KeywordClassifier;
 impl RelevanceClassifier for KeywordClassifier {
     fn classify(&self, task: &str, title: &str) -> Category {
         let title = title.to_lowercase();
-        if ["study with me", "studywithme", "스터디윗미", "lofi", "asmr"]
-            .iter()
-            .any(|s| title.contains(s))
+        if [
+            "study with me",
+            "studywithme",
+            "스터디윗미",
+            "lofi",
+            "asmr",
+            "background music",
+            "white noise",
+            "백색소음",
+            "플레이리스트",
+            "공부 음악",
+        ]
+        .iter()
+        .any(|s| title.contains(s))
         {
             return Category::Unknown;
         }
@@ -59,6 +70,8 @@ pub struct Browser {
     pub generation: u64,
     last_seen: u64,
     latest: Option<(Observation, u64)>,
+    candidates: Vec<(Observation, u64)>,
+    snapshot: bool,
     consumed: Option<u64>,
     pub discontinuous: bool,
 }
@@ -69,6 +82,8 @@ impl Default for Browser {
             generation: crate::activity_now(),
             last_seen: 0,
             latest: None,
+            candidates: vec![],
+            snapshot: false,
             consumed: None,
             discontinuous: true,
         }
@@ -80,15 +95,71 @@ pub enum Decision {
     Observe(Sample, u64, String, Category),
 }
 impl Browser {
-    pub fn active_video(&self, now: u64) -> Option<Observation> {
-        if !self.view.consent || !self.view.collecting || !self.view.observing {
-            return None;
+    pub fn visible_videos(&self, now: u64, titles: &[String]) -> Vec<Observation> {
+        if !self.view.consent || !self.view.collecting {
+            return vec![];
         }
-        self.latest.as_ref().filter(|(o, at)| now.saturating_sub(*at) <= 2500 && o.playing && o.kind == "watch").map(|(o, _)| o.clone())
+        let values = if self.snapshot {
+            self.candidates.clone()
+        } else {
+            self.latest.iter().cloned().collect()
+        };
+        let mut seen = std::collections::HashSet::new();
+        values
+            .into_iter()
+            .filter(|(o, at)| {
+                now.saturating_sub(*at) <= 2500
+                    && o.playing
+                    && o.kind == "watch"
+                    && titles.iter().any(|title| title_matches(title, &o.title))
+                    && seen.insert(o.video_id.clone())
+            })
+            .map(|(o, _)| o)
+            .collect()
+    }
+    pub fn choose_visible(
+        &mut self,
+        native: &Sample,
+        task: &str,
+        now: u64,
+        titles: &[String],
+    ) -> Decision {
+        let videos = self.visible_videos(now, titles);
+        let previous = self.latest.as_ref().and_then(|(o, _)| o.video_id.clone());
+        let selected = videos
+            .iter()
+            .find(|o| o.video_id == previous)
+            .or(videos.first());
+        if let Some(o) = selected {
+            let at = self
+                .candidates
+                .iter()
+                .find(|(candidate, _)| candidate.video_id == o.video_id)
+                .map(|(_, at)| *at)
+                .or(self.latest.as_ref().map(|(_, at)| *at))
+                .unwrap_or(now);
+            if previous != o.video_id {
+                self.discontinuous = true;
+            }
+            self.latest = Some((o.clone(), at));
+            return self.choose(
+                &Sample {
+                    process: "chrome.exe".into(),
+                    title: format!("{} - YouTube", o.title),
+                    idle: false,
+                },
+                task,
+                now,
+            );
+        }
+        self.latest = None;
+        self.choose(native, task, now)
     }
     pub fn invalidate(&mut self) {
         self.generation += 1;
         self.latest = None;
+        self.candidates.clear();
+        self.snapshot = false;
         self.consumed = None;
         self.view.collecting = false;
         self.view.observing = false;
@@ -111,9 +182,15 @@ impl Browser {
         self.status(now, running);
         if m.kind == "clear" || !self.view.collecting {
             self.latest = None;
+            self.candidates.clear();
             self.view.observing = false;
             self.discontinuous = true;
+        } else if m.kind == "snapshot" && m.generation == self.generation {
+            self.snapshot = true;
+            self.candidates = m.observations.iter().cloned().map(|o| (o, now)).collect();
+            self.view.observing = false;
         } else if m.kind == "observation" && m.generation == self.generation {
+            self.snapshot = false;
             if m.observation
                 .as_ref()
                 .is_none_or(|o| !o.playing || o.kind != "watch")
@@ -166,7 +243,7 @@ impl Browser {
             || now.saturating_sub(*at) > 2500
             || !o.playing
             || o.kind != "watch"
-            || !native.title.starts_with(&format!("{} - YouTube", o.title))
+            || !title_matches(&native.title, &o.title)
         {
             self.consumed = None;
             self.discontinuous = true;
@@ -189,12 +266,37 @@ impl Browser {
         )
     }
 }
+fn title_matches(window: &str, video: &str) -> bool {
+    let window = window.split_whitespace().collect::<Vec<_>>().join(" ");
+    let without_notification = window.strip_prefix('(').and_then(|s| {
+        s.split_once(") ")
+            .filter(|(n, _)| n.chars().all(|c| c.is_ascii_digit()))
+            .map(|(_, rest)| rest)
+    });
+    let video = video.split_whitespace().collect::<Vec<_>>().join(" ");
+    let matches = |window: &str| {
+        window
+            .strip_prefix(&video)
+            .is_some_and(|rest| rest == " - YouTube" || rest.starts_with(" - YouTube - "))
+    };
+    matches(&window) || without_notification.is_some_and(matches)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn notification_prefix_does_not_strip_a_real_video_title() {
+        assert!(title_matches("(2) chapter - YouTube", "(2) chapter"));
+        assert!(title_matches(
+            "(3) chapter - YouTube - Google Chrome",
+            "chapter"
+        ));
+        assert!(!title_matches("chapter extra - YouTube", "chapter"));
+    }
     fn message(generation: u64, playing: bool) -> Message {
         Message {
             version: 1,
+            observations: vec![],
             kind: "observation".into(),
             seq: 1,
             generation,
@@ -316,6 +418,7 @@ mod tests {
         }
         let clear = Message {
             version: 1,
+            observations: vec![],
             kind: "clear".into(),
             seq: 2,
             generation: b.generation,
@@ -357,5 +460,41 @@ mod tests {
         assert_eq!(d.view.totals.last_return_seconds, Some(3));
         b.disconnect();
         assert!(!b.view.collecting);
+    }
+    #[test]
+    fn snapshots_support_visible_unfocused_windows_and_remove_paused_or_stale_videos() {
+        let mut b = Browser::default();
+        b.view.consent = true;
+        let mut m = message(b.generation, true);
+        m.kind = "snapshot".into();
+        let first = m.observation.take().unwrap();
+        let second = Observation {
+            video_id: Some("zyxwvutsrqp".into()),
+            title: "lofi background music".into(),
+            ..first.clone()
+        };
+        m.observations = vec![first.clone(), second.clone(), first];
+        let titles = vec![
+            "(2) 게임 플레이 - YouTube - Google Chrome".into(),
+            "lofi background music - YouTube".into(),
+        ];
+        b.accept(&m, 1000, true);
+        assert_eq!(b.visible_videos(1100, &titles).len(), 2); // duplicate video is not counted twice
+        let editor = Sample {
+            process: "code.exe".into(),
+            title: "editor".into(),
+            idle: true,
+        };
+        assert!(matches!(
+            b.choose_visible(&editor, "공부", 1100, &titles),
+            Decision::Observe(Sample { idle: false, .. }, _, _, Category::Suspect)
+        ));
+        assert!(b.visible_videos(1100, &[]).is_empty()); // fully covered/minimized/window not matched
+        m.observations = vec![second];
+        b.accept(&m, 2000, true);
+        assert_eq!(b.visible_videos(2100, &titles).len(), 1);
+        assert!(b.visible_videos(5001, &titles).is_empty());
+        b.disconnect();
+        assert!(b.visible_videos(2100, &titles).is_empty());
     }
 }

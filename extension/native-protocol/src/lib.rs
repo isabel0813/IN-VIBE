@@ -39,6 +39,8 @@ pub struct Message {
     pub seq: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub observation: Option<Observation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub observations: Vec<Observation>,
 }
 impl Message {
     pub fn valid(&self) -> bool {
@@ -46,8 +48,9 @@ impl Message {
             && self.seq > 0
             && self.seq <= 9_007_199_254_740_991
             && match self.kind.as_str() {
-                "heartbeat" | "clear" => self.observation.is_none(),
-                "observation" => self.observation.as_ref().is_some_and(Observation::valid),
+                "heartbeat" | "clear" => self.observation.is_none() && self.observations.is_empty(),
+                "observation" => self.observations.is_empty() && self.observation.as_ref().is_some_and(Observation::valid),
+                "snapshot" => self.observation.is_none() && self.observations.len() <= 4 && self.observations.iter().all(Observation::valid),
                 _ => false,
             }
     }
@@ -126,5 +129,20 @@ mod tests {
         assert!(!o.valid());
         o.kind = "shorts".into();
         assert!(!o.valid());
+    }
+}
+
+#[cfg(test)]
+mod snapshot_tests {
+    use super::*;
+    #[test]
+    fn snapshots_are_bounded_and_do_not_mix_protocol_shapes() {
+        let video=Observation {kind:"watch".into(),video_id:Some("abcdefghijk".into()),title:"용".repeat(400),playing:true};
+        let mut m=Message {version:1,kind:"snapshot".into(),generation:1,seq:1,observation:None,observations:vec![video.clone();4]};
+        assert!(m.valid());
+        assert!(serde_json::to_vec(&m).unwrap().len()<LIMIT);
+        m.observations.push(video.clone()); assert!(!m.valid());
+        m.observations.clear(); assert!(m.valid());
+        m.observation=Some(video); assert!(!m.valid());
     }
 }
