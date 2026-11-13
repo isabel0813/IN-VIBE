@@ -12,3 +12,4 @@ dist/
 # 공통
 .env
 .DS_Store
+.qa/

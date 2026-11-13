@@ -80,6 +80,12 @@ pub enum Decision {
     Observe(Sample, u64, String, Category),
 }
 impl Browser {
+    pub fn active_video(&self, now: u64) -> Option<Observation> {
+        if !self.view.consent || !self.view.collecting || !self.view.observing {
+            return None;
+        }
+        self.latest.as_ref().filter(|(o, at)| now.saturating_sub(*at) <= 2500 && o.playing && o.kind == "watch").map(|(o, _)| o.clone())
+    }
     pub fn invalidate(&mut self) {
         self.generation += 1;
         self.latest = None;

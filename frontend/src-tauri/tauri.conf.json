@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "IN-VIBE",
+  "productName": "뭐보뇽",
   "version": "0.2.0",
   "identifier": "io.invibe.annyong",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "바꿔도 돼?",
+        "title": "뭐보뇽",
         "url": "index.html",
         "width": 1180,
         "height": 840,
@@ -41,8 +41,8 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; connect-src ipc: http://ipc.localhost http://127.0.0.1:8010 http://localhost:8010; object-src 'none'; frame-src 'none'",
-      "devCsp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost http://127.0.0.1:8010 http://localhost:8010 ws://127.0.0.1:5173; object-src 'none'; frame-src 'none'"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; connect-src https://api.mobonyong.com ipc: http://ipc.localhost http://127.0.0.1:8010 http://localhost:8010; object-src 'none'; frame-src 'none'",
+      "devCsp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src https://api.mobonyong.com ipc: http://ipc.localhost http://127.0.0.1:8010 http://localhost:8010 ws://127.0.0.1:5173; object-src 'none'; frame-src 'none'"
     }
   },
   "bundle": {
