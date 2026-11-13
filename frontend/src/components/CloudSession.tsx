@@ -111,6 +111,6 @@ export default function CloudSession() {
     <p>{isDesktop() ? "YouTube 연결에서 로컬 관측도 켜 주세요. 안뇽이를 클릭하면 AI 확인 질문을 볼 수 있어요." : "웹에서는 세션 시작·종료와 계획 관리를 제공합니다. 자동 YouTube 관측과 독립 위젯은 Windows 앱 및 Chrome 확장이 필요합니다."}</p>
     {value && <p>집중 중 · {value.task} <button disabled={busy} onClick={async () => { setBusy(true); try { await api.endSession(value.id); write(null); await sessionStore.send({ type: "end" }); } catch(e) { setError(String(e)); } finally { setBusy(false); } }}>세션 종료</button></p>}
     <CloudQuestion />{error && <p role="alert">{error}</p>}
-    <p><a href="/install.html" target="_blank" rel="noreferrer">Windows·Chrome 설치 안내</a> · 설치 파일은 제출용 배포 준비 중입니다.</p>
+    <p><a href="/install.html" target="_blank" rel="noreferrer">Windows·Chrome 설치 안내</a> · <a href="https://github.com/isabel0813/IN-VIBE/releases/download/v0.2.0-incamp-20261114/Mobonyong-Windows-MVP.zip">Windows 시험판 다운로드</a></p>
   </section>;
 }
