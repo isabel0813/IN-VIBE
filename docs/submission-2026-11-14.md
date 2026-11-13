@@ -38,3 +38,12 @@ React 빌드 성공, Vitest 63개 성공(기존 60개 + 한 줄 세션/ask/정�
 Windows release EXE와 NSIS 생성 성공. 샌드박스에서 NSIS DLL 오류 623이 발생해 사용자 컨텍스트로 재실행하여 해결. 새 EXE를 실제 실행해 한 줄 입력, 운영 세션 시작, 메인 숨김, 독립 위젯 표시, 위젯 말풍선의 실제 작업명, 위젯 종료와 메인 복귀를 확인. 활동 관측과 AI 동의는 꺼진 상태로 검사. 전체 실제 Chrome AI 경로, NSIS 설치/제거, 다른 PC 검증은 미완료.
 
 공개 게시·push·웹 배포는 사용자 승인 전까지 보류. 설치 안내와 웹 ZIP, Windows/Chrome/Native Host ZIP을 로컬 준비. Windows 배포물은 코드 서명되지 않음.
+
+## 승인 후 공개 결과
+
+- feat/annyong-mvp push 성공. 제출 코드 207cf8f, 다운로드 링크 추가 bc756ac.
+- 시험판 Release https://github.com/isabel0813/IN-VIBE/releases/tag/v0.2.0-incamp-20261114
+- 공개 Windows ZIP https://github.com/isabel0813/IN-VIBE/releases/download/v0.2.0-incamp-20261114/Mobonyong-Windows-MVP.zip
+- 공개 ZIP을 다시 내려받아 SHA256 BDB5F7AF61DF7F85165276F60F061C5DA31B0E481B1A2796E465D63DE52E48FD 일치 확인.
+- Vercel GitHub 상태는 bc756ac에 Deployment has completed 성공. 운영 도메인 전환은 별도 확인이 필요하며, 현재 브라우저 Vercel 로그인이 필요함.
+- 배포 프로젝트 isabel0813/mobonyong. 운영 전환 완료 전까지 mobonyong.com의 새 세션 UI와 설치 링크가 공개됐다고 표시하지 않음.
