@@ -1,0 +1,15 @@
+.activity-controls { margin: 12px 0 24px; padding: 14px 18px; border: 1px solid #34445f; border-radius: 12px; color: #bccbe3; font-size: 13px; }
+.activity-controls summary { cursor: pointer; color: #d9e5ff; }
+.activity-controls p { line-height: 1.7; }
+.activity-controls label { display: block; }
+.activity-controls button { padding: 8px 12px; border: 1px solid #425477; border-radius: 8px; background: #202f48; color: #e3ecff; cursor: pointer; }
+.activity-controls button:disabled { opacity: .45; cursor: default; }
+.activity-controls input[type=checkbox] { width: auto; margin-right: 8px; }
+.activity-fields { display: flex; gap: 12px; flex-wrap: wrap; margin: 14px 0; }
+.activity-fields label { flex: 1; min-width: 180px; }
+.activity-fields input { display: block; width: 100%; margin-top: 7px; padding: 9px; color: #e3ecff; background: #111c2c; border: 1px solid #425477; border-radius: 8px; }
+.activity-observation { overflow-wrap: anywhere; }
+.recovery-flow { font-size: 12px; line-height: 1.6; }
+.recovery-flow input { width: 85px; padding: 6px; margin: 6px; background: #0e192a; border: 1px solid #53698d; border-radius: 6px; color: #e7efff; }
+.recovery-flow button { display: block; width: 100%; margin: 6px 0; }
+.recovery-flow .observed-title { overflow-wrap: anywhere; max-height: 54px; overflow: auto; color: #adbad1; }

@@ -1,0 +1,7 @@
+{
+  "name": "in-vibe-youtube",
+  "private": true,
+  "version": "0.3.0",
+  "type": "module",
+  "scripts": { "test": "node --test tests/*.test.js", "id": "node scripts/extension-id.mjs" }
+}

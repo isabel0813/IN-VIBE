@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop",
+  "description": "Local main and pet windows can subscribe to shared session events. Window mutations use restricted Rust commands.",
+  "windows": ["main", "widget"],
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
+}

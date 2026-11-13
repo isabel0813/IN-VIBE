@@ -1,0 +1,54 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "IN-VIBE",
+  "version": "0.2.0",
+  "identifier": "io.invibe.annyong",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:5173",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "바꿔도 돼?",
+        "url": "index.html",
+        "width": 1180,
+        "height": 840,
+        "minWidth": 760,
+        "minHeight": 600,
+        "center": true,
+        "theme": "Dark"
+      },
+      {
+        "label": "widget",
+        "title": "안뇽이",
+        "url": "index.html?window=widget",
+        "width": 80,
+        "height": 80,
+        "visible": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "resizable": false,
+        "maximizable": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "focus": false,
+        "focusable": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; connect-src ipc: http://ipc.localhost http://127.0.0.1:8010 http://localhost:8010; object-src 'none'; frame-src 'none'",
+      "devCsp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost http://127.0.0.1:8010 http://localhost:8010 ws://127.0.0.1:5173; object-src 'none'; frame-src 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "useLocalToolsDir": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.png", "icons/icon.ico"]
+  }
+}

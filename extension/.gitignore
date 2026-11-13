@@ -1,0 +1,4 @@
+.local/
+native-host/target/
+native-protocol/target/
+*.log
