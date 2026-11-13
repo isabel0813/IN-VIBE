@@ -1,7 +1,7 @@
-# 바꿔도 돼? 백엔드
+# 뭐보뇽 백엔드
 
 사용자가 적은 **지금 할 일 한 줄**을 기준으로, 보고 있는 유튜브 영상이 공부인지 딴짓인지 AI로 판단하고
-안뇽이 개입 후 **공부로 돌아왔는지**를 기록·측정하는 FastAPI 서버. DB는 SQLite 파일 하나(`bakkwodo.db`)다.
+안뇽이 개입 후 **공부로 돌아왔는지**를 기록·측정하는 FastAPI 서버. DB는 SQLite 파일 하나(`mobonyong.db`)다.
 
 > 2026-11-12 방향 변경: 할 일 목록·우선순위 계산은 핵심 기능에서 뺐다. 아래 `/tasks`, `/plan` 계열 API는
 > 기존 앱 호환을 위해 남겨 두었고, 새 흐름은 **세션 → 영상 판단 → 정정 → 복귀 지표**다.
@@ -34,7 +34,7 @@ uvicorn app.main:app --reload
 `LLM_PROVIDER=ollama`로 두고 `ollama pull qwen2.5:7b` 후 실행.
 
 환경변수
-- `DB_PATH`: 기본 `bakkwodo.db`. Railway에서는 볼륨 경로(예: `/data/bakkwodo.db`)로 설정
+- `DB_PATH`: 기본 `mobonyong.db`. Railway에서는 볼륨 경로(예: `/data/mobonyong.db`)로 설정
 - `CORS_ORIGINS`: 기본 `*`. 프론트 배포 후 그 주소로 바꾸기
 - `ANTHROPIC_API_KEY`: 자연어 등록에 필요
 - `LLM_MODEL`: 기본 `claude-haiku-5-5`

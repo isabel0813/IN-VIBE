@@ -1,4 +1,4 @@
-"""바꿔도 돼? 백엔드 API."""
+"""뭐보뇽 백엔드 API."""
 from __future__ import annotations
 
 import csv
@@ -17,7 +17,7 @@ from . import db, judge, metrics, nlp, planner
 from .schemas import (EventIn, JudgeFeedbackIn, JudgeIn, ParseIn, SessionEnd, SessionIn,
                       SettingsIn, TaskBatchCreate, TaskCreate, TaskUpdate, WastedIn)
 
-app = FastAPI(title="바꿔도 돼? API", version="0.4.0")
+app = FastAPI(title="뭐보뇽 API", version="0.4.0")
 
 origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["*"], allow_headers=["*"])

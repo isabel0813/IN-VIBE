@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 from . import planner
 
 KST = ZoneInfo("Asia/Seoul")
-DB_PATH = os.getenv("DB_PATH", "bakkwodo.db")
+DB_PATH = os.getenv("DB_PATH", "mobonyong.db")
 DEFAULT_DAILY_MINUTES = 480
 
 SCHEMA = """
