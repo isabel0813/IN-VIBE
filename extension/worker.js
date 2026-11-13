@@ -43,7 +43,9 @@ async function tick() {
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
   void (async () => {
     await loaded;
-    if (sender.id === chrome.runtime.id && sender.url === chrome.runtime.getURL("popup.html") && !sender.tab) {
+    // Chrome can include sender.tab when our own settings page is opened as a tab.
+    // Its exact extension URL (never a YouTube content-script URL) remains mandatory.
+    if (sender.id === chrome.runtime.id && sender.url === chrome.runtime.getURL("popup.html") && (sender.frameId === undefined || sender.frameId === 0)) {
       if (message?.type === "enable" && typeof message.enabled === "boolean") {
         enabled = message.enabled; await chrome.storage.local.set({ enabled });
         if (!enabled) { clear(); disconnect(); } else { retryAt = 0; connect(); send("heartbeat"); }

@@ -22,7 +22,8 @@ test("worker gates native access, selected tab, window focus, consent and discon
     await import("../worker.js"); await flush();
     assert.equal(nativeConnections.length,0);
     await request({type:"enable",enabled:true},sender); assert.equal(nativeConnections.length,0);
-    await request({type:"enable",enabled:true},popup);
+    await request({type:"enable",enabled:true},{...popup,frameId:1}); assert.equal(nativeConnections.length,0);
+    await request({type:"enable",enabled:true},{...popup,frameId:0,tab:{id:9,url:popup.url}});
     interval(); await flush(); assert.equal(challenges.length,1);
     const payload={kind:"watch",videoId:"abcdefghijk",title:"게임 플레이",playing:true};
     const observation={type:"observation",nonce:challenges.at(-1).nonce,payload};

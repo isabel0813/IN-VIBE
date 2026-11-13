@@ -56,3 +56,9 @@ npm run desktop:build
 - 서버나 DB 교체는 이 구현에 포함되지 않습니다. 클라우드 전송을 추가하려면 별도 설계와 명시적 동의가 필요합니다.
 
 설계 참고: [Chrome Native Messaging 공식 문서](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging), [Chrome tabs API](https://developer.chrome.com/docs/extensions/reference/api/tabs).
+
+## 2026-11-14 제출용 배포 묶음
+
+제공받은 ZIP에는 미리 빌드한 `extension/native-host-runtime/in-vibe-native-host.exe`가 포함됩니다. Rust 설치 없이 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./extension/scripts/Configure-DownloadedHost.ps1`로 등록 내용을 확인하고, 동의하면 `-Register`를 붙여 사용자별 호스트를 등록합니다. ZIP 전체를 고정된 경로에 먼저 압축 해제하세요. 실제 확장 ID가 다르면 `-ExtensionId <ID>`를 지정하세요. 레지스트리 변경은 사용자가 이 단계를 명시적으로 실행할 때만 일어납니다.
+
+새 한 줄 AI 세션은 별도 AI 동의 후 관측한 제목·ID를 `https://api.mobonyong.com/judge`로 보냅니다. 기존 계획 모드의 로컬 분류와 다릅니다. `ask`는 확인 질문을 표시하고 `ignore`는 개입하지 않습니다. “아니? 전혀~”는 `/judge/feedback`으로 해당 세션에서 정정합니다. 전체 제출 검증과 미확인 범위는 `docs/submission-2026-11-14.md`, 일반 사용자 안내는 `frontend/public/install.html`에 기록합니다.

@@ -15,10 +15,12 @@ import { previewPlacement } from "./geometry";
 import "./widget.css";
 import { activityApi, useActivity } from "../activity/bridge";
 import RecoveryFlow from "../activity/RecoveryFlow";
+import { CloudQuestion, useCloudSession } from "../components/CloudSession";
 
 export default function Widget({ native = isDesktop() }: { native?: boolean }) {
   const { session, ready, error: syncError } = useFocusSession();
   const { activity } = useActivity();
+  const cloud = useCloudSession();
   const [layout, setLayout] = useState<WidgetLayout>(closedLayout);
   const [position, setPosition] = useState({
     x: window.innerWidth - 104,
@@ -38,7 +40,7 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
     moved: boolean;
   } | null>(null);
   const moved = useRef(false);
-  const copy = characterCopy[session.character];
+  const copy = characterCopy[cloud?.ask ? "suspect" : session.character];
   const preview = previewPlacement(
     position.x,
     position.y,
@@ -228,6 +230,7 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
             </p>
           )}
           <RecoveryFlow incident={activity.incident} paused={session.paused || !session.running} />
+          <CloudQuestion />
           {session.character === "checkin" && !activity.incident && session.simulated && (
             <div className="checkin-options">
               <button
@@ -333,7 +336,7 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
       )}
       <button
         ref={pet}
-        className={`pet-character state-${session.character}`}
+        className={`pet-character state-${cloud?.ask ? "suspect" : session.character}`}
         style={{ left: geometry.petX, top: geometry.petY }}
         aria-label={`안뇽이: ${copy.label}. 클릭하면 말풍선, 드래그하면 이동`}
         aria-expanded={layout.open}
@@ -367,7 +370,7 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
       >
         <img draggable={false} src={characterArt[session.character]} alt="" />
         <span className="pet-state-dot" aria-hidden="true" />
-        {!layout.open && session.character === "suspect" && activity.incident && !session.paused && <span className="pet-nudge">잠깐, 확인!</span>}
+        {!layout.open && !session.paused && (cloud?.ask || (session.character === "suspect" && activity.incident)) && <span className="pet-nudge">잠깐, 확인!</span>}
       </button>
       {native && !layout.open && <div
         className="pet-drag-handle"

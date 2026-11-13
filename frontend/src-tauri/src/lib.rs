@@ -176,6 +176,15 @@ fn activity_respond(
 }
 
 #[tauri::command]
+fn browser_video(caller: WebviewWindow, state: State<'_, AppState>) -> Result<Option<annyong_native_protocol::Observation>> {
+    allowed(&caller)?;
+    let session = state.session.lock().map_err(|e| e.to_string())?;
+    let detector = state.activity.lock().map_err(|e| e.to_string())?;
+    if !session.running || session.paused || !detector.view.consent { return Ok(None); }
+    let browser = state.browser.lock().map_err(|e| e.to_string())?;
+    Ok(browser.active_video(activity_now()))
+}
+#[tauri::command]
 fn browser_read(caller: WebviewWindow, state: State<'_, AppState>) -> Result<browser::BrowserView> {
     allowed(&caller)?;
     let session = state.session.lock().map_err(|e| e.to_string())?;
@@ -432,7 +441,12 @@ pub fn run() {
                             {
                                 detector.stop();
                             }
-                            match decision {
+                            // One-line cloud sessions use /judge as their sole intervention
+                            // source, so an AI ignore/feedback cannot trigger a local alert.
+                            if session.task.as_ref().is_some_and(|t| t.id >= 1_000_000_000_000) {
+                                detector.stop();
+                                false
+                            } else { match decision {
                                 browser::Decision::Native => {
                                     detector.poll(true, false, now, || Ok(sample))
                                 }
@@ -440,7 +454,7 @@ pub fn run() {
                                 browser::Decision::Observe(s, at, key, category) => {
                                     detector.observe_as(Ok(s), at, Some((key, category)))
                                 }
-                            }
+                            } }
                         }
                     };
                     if raised {
@@ -462,6 +476,7 @@ pub fn run() {
             activity_configure,
             activity_respond,
             browser_read,
+            browser_video,
             browser_configure,
             widget_read_layout,
             widget_bubble,

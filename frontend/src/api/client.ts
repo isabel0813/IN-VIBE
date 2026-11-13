@@ -2,7 +2,7 @@ import type { ParsedTasks, Plan, Settings, Task, TaskDraft, RecoveryPlan } from 
 
 export const USER_ID_KEY = "in-vibe.user-id";
 const baseUrl = (
-  import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8010"
+  import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? "http://127.0.0.1:8010" : "https://api.mobonyong.com")
 ).replace(/\/+$/, "");
 
 export function getUserId(): string {
@@ -83,6 +83,10 @@ async function request<T>(
 }
 
 export const api = {
+  startSession: (task: string) => request<{ id: number; task: string }>("/sessions", { method: "POST", body: JSON.stringify({ task }) }),
+  endSession: (id: number) => request<unknown>(`/sessions/${id}/end`, { method: "POST", body: JSON.stringify({ reason: "stopped" }) }),
+  judge: (session_id: number, video: { title: string; video_id: string }) => request<{ action: "ask" | "ignore"; reason: string }>("/judge", { method: "POST", body: JSON.stringify({ session_id, ...video }) }, 45000),
+  feedback: (session_id: number, video: { title: string; video_id: string }) => request<unknown>("/judge/feedback", { method: "POST", body: JSON.stringify({ session_id, ...video }) }),
   parse: (text: string, signal?: AbortSignal) =>
     request<ParsedTasks>(
       "/tasks/parse",

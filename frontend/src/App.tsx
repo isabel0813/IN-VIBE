@@ -16,6 +16,7 @@ import { isDesktop, onNavigate, showWidget } from "./desktop/bridge";
 import { WebWidgetPreview } from "./widget/Widget";
 import DevControls from "./widget/DevControls";
 import ActivityControls from "./activity/ActivityControls";
+import CloudSession from "./components/CloudSession";
 
 type Step = "input" | "review" | "plan";
 const example =
@@ -72,6 +73,7 @@ export default function App() {
       if (
         current.running &&
         current.task &&
+        current.task.id < 1_000_000_000_000 &&
         current.revision === sessionRevision
       ) {
         const task = nextTasks.find((item) => item.id === current.task?.id);
@@ -296,7 +298,7 @@ export default function App() {
             <Icon name="check" />
           </span>
           <span>
-            바꿔도 돼<span className="brand-question">?</span>
+            뭐보뇽
             <small>나의 다음 한 걸음</small>
           </span>
         </a>
@@ -401,6 +403,7 @@ export default function App() {
               </span>
             )}
           </div>
+          <CloudSession />
           <ActivityControls />
           <ol className="steps" aria-label="진행 단계">
             {[
@@ -603,7 +606,7 @@ export default function App() {
         {import.meta.env.DEV && <DevControls />}
         {!isDesktop() && <WebWidgetPreview />}
         <footer className="app-footer">
-          <span>바꿔도 돼?</span>작은 시작이, 하루를 바꾸니까.
+          <span>뭐보뇽</span>작은 시작이, 하루를 바꾸니까.
         </footer>
       </div>
     </div>
