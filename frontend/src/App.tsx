@@ -423,7 +423,7 @@ export default function App() {
               </li>
             ))}
           </ol>
-          {connectionError && (
+          {connectionError && (step !== "input" || initialLoading) && (
             <div className="error-banner" role="alert">
               <strong>연결을 확인해 주세요</strong>
               <span>{connectionError}</span>
@@ -471,97 +471,112 @@ export default function App() {
                   내 계획 보기 <Icon name="arrow" />
                 </button>
               </header>
-
-              <div className="landing-center">
-                <div className="landing-mascot">
-                  <img src={characterArt.idle} alt="안뇽이 캐릭터" />
-                </div>
-                <span className="landing-eyebrow">ONE THING AT A TIME</span>
-                <h1>오늘은 뭐 할 거뇽?</h1>
-                <p>
-                  할 일과 마감만 편하게 말해 봐.
-                  <br />
-                  복잡한 계획은 내가 정리해 줄게.
-                </p>
-              </div>
-
-              <section className="landing-input" aria-label="오늘의 할 일 입력">
-                <form
-                  className="composer landing-composer"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    void parse();
-                  }}
-                >
-                  <div className="composer-heading">
-                    <label htmlFor="task-text">
-                      <Icon name="spark" />
-                      어떤 일을 해야 하나요?
-                    </label>
-                    <span>여러 개를 한 번에 적어도 돼</span>
-                  </div>
-                  <textarea
-                    id="task-text"
-                    maxLength={2000}
-                    value={text}
-                    disabled={parsing}
-                    onChange={(event) => setText(event.target.value)}
-                    placeholder={
-                      "예: 오늘 11시까지 C++ 과제 2시간, 내일 물리 시험 공부 3시간"
-                    }
-                  />
-                  <div className="composer-bottom">
-                    <span>{text.length.toLocaleString()} / 2,000</span>
-                    <button className="primary" disabled={!text.trim() || parsing}>
-                      {parsing ? (
-                        <>
-                          <span className="spinner" />
-                          정리하는 중…
-                        </>
-                      ) : (
-                        <>
-                          <Icon name="spark" />
-                          AI로 할 일 정리
-                          <Icon name="arrow" />
-                        </>
-                      )}
+              <div className="landing-connection-slot">
+                {connectionError && (
+                  <div className="landing-connection" role="alert">
+                    <span title={connectionError}>{connectionError}</span>
+                    <button
+                      className="text-button"
+                      disabled={busy}
+                      onClick={() => void refresh()}
+                    >
+                      다시 연결
                     </button>
                   </div>
-                </form>
-                {parsing && (
-                  <p className="helper" role="status">
-                    AI 정리가 오래 걸리면 직접 입력으로 전환할 수 있어.
-                  </p>
                 )}
-                {formError && (
-                  <p className="error-message" role="alert">
-                    {formError}
+              </div>
+              <div className="landing-body">
+                <div className="landing-center">
+                  <div className="landing-mascot">
+                    <img src={characterArt.idle} alt="안뇽이 캐릭터" />
+                  </div>
+                  <span className="landing-eyebrow">ONE THING AT A TIME</span>
+                  <h1>오늘은 뭐 할 거뇽?</h1>
+                  <p>
+                    할 일과 마감만 편하게 말해 봐.
+                    <br />
+                    복잡한 계획은 내가 정리해 줄게.
                   </p>
-                )}
-                <div className="landing-mini-actions">
-                  <button
-                    className="text-button"
-                    type="button"
-                    disabled={parsing}
-                    onClick={() => setText(example)}
-                  >
-                    예시 사용하기 <Icon name="plus" />
-                  </button>
-                  <button
-                    className="text-button"
-                    type="button"
-                    onClick={() => {
-                      setNotice("마감 시간과 예상 시간을 직접 입력해 주세요.");
-                      manual();
+                </div>
+
+                <section className="landing-input" aria-label="오늘의 할 일 입력">
+                  <form
+                    className="composer landing-composer"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void parse();
                     }}
                   >
-                    직접 입력하기 <Icon name="arrow" />
-                  </button>
-                </div>
-                <p className="privacy-note">
-                  입력한 할 일은 초안을 확인하고 수정한 후에 저장돼.
-                </p>
-              </section>
+                    <div className="composer-heading">
+                      <label htmlFor="task-text">
+                        <Icon name="spark" />
+                        어떤 일을 해야 하나요?
+                      </label>
+                      <span>여러 개를 한 번에 적어도 돼</span>
+                    </div>
+                    <textarea
+                      id="task-text"
+                      maxLength={2000}
+                      value={text}
+                      disabled={parsing}
+                      onChange={(event) => setText(event.target.value)}
+                      placeholder={
+                        "예: 오늘 11시까지 C++ 과제 2시간, 내일 물리 시험 공부 3시간"
+                      }
+                    />
+                    <div className="composer-bottom">
+                      <span>{text.length.toLocaleString()} / 2,000</span>
+                      <button className="primary" disabled={!text.trim() || parsing}>
+                        {parsing ? (
+                          <>
+                            <span className="spinner" />
+                            정리하는 중…
+                          </>
+                        ) : (
+                          <>
+                            <Icon name="spark" />
+                            AI로 할 일 정리
+                            <Icon name="arrow" />
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                  {parsing && (
+                    <p className="helper" role="status">
+                      AI 정리가 오래 걸리면 직접 입력으로 전환할 수 있어.
+                    </p>
+                  )}
+                  {formError && (
+                    <p className="error-message" role="alert">
+                      {formError}
+                    </p>
+                  )}
+                  <div className="landing-mini-actions">
+                    <button
+                      className="text-button"
+                      type="button"
+                      disabled={parsing}
+                      onClick={() => setText(example)}
+                    >
+                      예시 사용하기 <Icon name="plus" />
+                    </button>
+                    <button
+                      className="text-button"
+                      type="button"
+                      onClick={() => {
+                        setNotice("마감 시간과 예상 시간을 직접 입력해 주세요.");
+                        manual();
+                      }}
+                    >
+                      직접 입력하기 <Icon name="arrow" />
+                    </button>
+                  </div>
+                  <p className="privacy-note">
+                    입력한 할 일은 초안을 확인하고 수정한 후에 저장돼.
+                  </p>
+                </section>
+              </div>
             </div>
           ) : step === "review" ? (
             <>

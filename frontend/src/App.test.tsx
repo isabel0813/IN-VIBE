@@ -268,6 +268,23 @@ describe("Phase 1 user flows", () => {
 
 
 describe("C안 시작 화면", () => {
+  it("shows connection errors inside the compact landing slot and retries without losing input", async () => {
+    failRefresh = true;
+    await openInput();
+    const alert = screen.getByRole("alert");
+    expect(alert.closest(".landing-connection-slot")).not.toBeNull();
+    expect(document.querySelector(".error-banner")).toBeNull();
+    expect(alert.textContent).toContain("서버에 연결할 수 없어요");
+    fireEvent.change(screen.getByLabelText("어떤 일을 해야 하나요?"), {
+      target: { value: "내일 물리 공부" },
+    });
+    failRefresh = false;
+    fireEvent.click(screen.getByRole("button", { name: "다시 연결" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect((screen.getByLabelText("어떤 일을 해야 하나요?") as HTMLTextAreaElement).value).toBe("내일 물리 공부");
+    expect(document.querySelector(".landing-connection-slot")).not.toBeNull();
+  });
+
   it("shows the character-centered input without removing the existing plan flow", async () => {
     await openInput();
     expect(screen.getByRole("heading", { name: "오늘은 뭐 할 거뇽?" })).toBeTruthy();

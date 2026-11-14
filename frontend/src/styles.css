@@ -1273,6 +1273,7 @@ main {
 .landing-mode .desktop-session-bar,
 .landing-mode .cloud-session,
 .landing-mode .activity-controls,
+.landing-mode .pet-dev-controls,
 .landing-mode .app-footer { display: none; }
 .landing-mode .workspace {
   margin-left: 0;
@@ -1284,13 +1285,47 @@ main {
 .landing-mode main {
   max-width: 980px;
   min-height: 100vh;
+  min-height: 100dvh;
   padding: 0 clamp(20px, 5vw, 62px);
 }
 .landing-screen {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  padding: 26px 0 34px;
+  padding: clamp(12px, 2.5vh, 24px) 0;
+}
+/* Auto margins share spare height; content grows normally on short screens. */
+.landing-body {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(16px, 2.5vh, 24px);
+  margin-block: auto;
+  padding-block: 12px;
+  flex-shrink: 0;
+}
+.landing-connection-slot {
+  min-height: 30px;
+  flex-shrink: 0;
+}
+.landing-connection {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 30px;
+  color: #e5c0ad;
+  font-size: 11px;
+}
+.landing-connection > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.landing-connection > button {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: inherit;
 }
 .landing-header {
   display: flex;
@@ -1317,19 +1352,17 @@ main {
 .landing-plan-link:hover:not(:disabled) { color: #d7e6ff; }
 .landing-plan-link svg { width: 15px; height: 15px; }
 .landing-center {
-  flex: 1;
-  min-height: 270px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 20px 0;
   text-align: center;
 }
 .landing-mascot {
-  width: clamp(112px, 16vh, 162px);
-  height: clamp(112px, 16vh, 162px);
-  margin-bottom: 17px;
+  width: clamp(132px, 18.88vh, 191px);
+  height: clamp(132px, 18.88vh, 191px);
+  flex-shrink: 0;
+  margin-bottom: 12px;
   filter: drop-shadow(0 18px 28px #01081280);
 }
 .landing-mascot img {
@@ -1346,17 +1379,17 @@ main {
   font-weight: 700;
 }
 .landing-center h1 {
-  margin-top: 14px;
+  margin-top: 10px;
   color: #f1f5ff;
-  font-size: clamp(27px, 4vw, 42px);
+  font-size: clamp(27px, 4.8vh, 40px);
   line-height: 1.3;
   letter-spacing: -1.4px;
 }
 .landing-center p {
-  margin-top: 13px;
+  margin-top: 10px;
   color: #a7b5cc;
   font-size: 13px;
-  line-height: 1.95;
+  line-height: 1.75;
 }
 .landing-input { width: min(100%, 730px); margin: 0 auto; }
 .landing-composer {
@@ -1367,24 +1400,25 @@ main {
   box-shadow: 0 16px 45px #060a141f;
 }
 .landing-composer:focus-within { border-color: #86aaf0; }
-.landing-composer .composer-heading { padding: 20px 23px 0; }
+.landing-composer .composer-heading { padding: 16px 23px 0; }
 .landing-composer textarea {
-  min-height: 108px;
-  padding: 17px 23px 15px;
+  min-height: clamp(72px, 12vh, 104px);
+  height: clamp(72px, 12vh, 104px);
+  padding: 12px 23px;
   font-size: 14px;
   resize: vertical;
 }
-.landing-composer .composer-bottom { padding: 0 18px 17px 23px; }
+.landing-composer .composer-bottom { padding: 0 18px 14px 23px; }
 .landing-composer .primary { border-radius: 12px; }
 .landing-mini-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 15px;
-  padding: 12px 5px 0;
+  padding: 10px 5px 0;
 }
 .landing-mini-actions .text-button { color: #a8bddb; }
-.landing-mode .privacy-note { margin-top: 11px; }
+.landing-mode .privacy-note { margin-top: 8px; }
 .landing-mode .error-banner,
 .landing-mode .notice { margin: 15px auto 0; max-width: 730px; }
 @keyframes landing-breathe {
@@ -1392,12 +1426,20 @@ main {
   50% { transform: translateY(-5px); }
 }
 @media (max-width: 600px) {
-  .landing-screen { padding: 18px 0 25px; }
-  .landing-center { min-height: 230px; }
   .landing-composer .composer-heading { align-items: flex-start; }
   .landing-composer .composer-heading > span { display: none; }
   .landing-composer .composer-bottom { gap: 10px; }
   .landing-composer .primary { padding: 11px 12px; font-size: 12px; }
+}
+@media (max-height: 700px) {
+  .landing-body { padding-block: 8px; gap: 16px; }
+  .landing-mascot { margin-bottom: 8px; }
+  .landing-center h1 { margin-top: 8px; }
+  .landing-center p { margin-top: 6px; line-height: 1.55; }
+  .landing-composer .composer-heading { padding-top: 12px; }
+  .landing-composer textarea { height: 72px; min-height: 72px; }
+  .landing-composer .composer-bottom { padding-bottom: 10px; }
+  .landing-composer .primary { padding-block: 10px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .landing-mascot img { animation: none; }
