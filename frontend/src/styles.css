@@ -1263,3 +1263,142 @@ main {
 .cloud-session p, .cloud-session label { font-size: 13px; line-height: 1.7; color: #bac8dd; }
 .cloud-session a { color: #94bdff; }
 .cloud-question { border: 1px solid #718bcc; padding: 12px; border-radius: 12px; }
+
+
+/* C안: 입력 화면만 하나의 캐릭터 중심 장면으로 표시한다.
+   검토/계획 화면과 안뇽이 위젯 기능은 그대로 유지한다. */
+.landing-mode .sidebar,
+.landing-mode .topbar,
+.landing-mode .steps,
+.landing-mode .desktop-session-bar,
+.landing-mode .cloud-session,
+.landing-mode .activity-controls,
+.landing-mode .app-footer { display: none; }
+.landing-mode .workspace {
+  margin-left: 0;
+  background:
+    radial-gradient(ellipse 58% 43% at 50% 37%, #29436565, transparent 74%),
+    radial-gradient(ellipse 55% 35% at 80% 94%, #1c2b4a42, transparent 83%),
+    #101622;
+}
+.landing-mode main {
+  max-width: 980px;
+  min-height: 100vh;
+  padding: 0 clamp(20px, 5vw, 62px);
+}
+.landing-screen {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 26px 0 34px;
+}
+.landing-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+.landing-logo {
+  color: #eaf2ff;
+  font-size: 19px;
+  font-weight: 750;
+  letter-spacing: -0.6px;
+}
+.landing-logo span { color: #8eb8ff; }
+.landing-plan-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 2px;
+  color: #abbad2;
+  background: transparent;
+  font-size: 12px;
+}
+.landing-plan-link:hover:not(:disabled) { color: #d7e6ff; }
+.landing-plan-link svg { width: 15px; height: 15px; }
+.landing-center {
+  flex: 1;
+  min-height: 270px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 0;
+  text-align: center;
+}
+.landing-mascot {
+  width: clamp(112px, 16vh, 162px);
+  height: clamp(112px, 16vh, 162px);
+  margin-bottom: 17px;
+  filter: drop-shadow(0 18px 28px #01081280);
+}
+.landing-mascot img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  animation: landing-breathe 4s ease-in-out infinite;
+}
+.landing-eyebrow {
+  color: #90b6ef;
+  font-size: 10px;
+  letter-spacing: 2.6px;
+  font-weight: 700;
+}
+.landing-center h1 {
+  margin-top: 14px;
+  color: #f1f5ff;
+  font-size: clamp(27px, 4vw, 42px);
+  line-height: 1.3;
+  letter-spacing: -1.4px;
+}
+.landing-center p {
+  margin-top: 13px;
+  color: #a7b5cc;
+  font-size: 13px;
+  line-height: 1.95;
+}
+.landing-input { width: min(100%, 730px); margin: 0 auto; }
+.landing-composer {
+  margin-top: 0;
+  border: 1px solid #4254738a;
+  border-radius: 21px;
+  background: #1c2937b0;
+  box-shadow: 0 16px 45px #060a141f;
+}
+.landing-composer:focus-within { border-color: #86aaf0; }
+.landing-composer .composer-heading { padding: 20px 23px 0; }
+.landing-composer textarea {
+  min-height: 108px;
+  padding: 17px 23px 15px;
+  font-size: 14px;
+  resize: vertical;
+}
+.landing-composer .composer-bottom { padding: 0 18px 17px 23px; }
+.landing-composer .primary { border-radius: 12px; }
+.landing-mini-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 12px 5px 0;
+}
+.landing-mini-actions .text-button { color: #a8bddb; }
+.landing-mode .privacy-note { margin-top: 11px; }
+.landing-mode .error-banner,
+.landing-mode .notice { margin: 15px auto 0; max-width: 730px; }
+@keyframes landing-breathe {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+@media (max-width: 600px) {
+  .landing-screen { padding: 18px 0 25px; }
+  .landing-center { min-height: 230px; }
+  .landing-composer .composer-heading { align-items: flex-start; }
+  .landing-composer .composer-heading > span { display: none; }
+  .landing-composer .composer-bottom { gap: 10px; }
+  .landing-composer .primary { padding: 11px 12px; font-size: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .landing-mascot img { animation: none; }
+}

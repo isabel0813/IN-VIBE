@@ -265,3 +265,45 @@ describe("Phase 1 user flows", () => {
     expect(screen.queryByText("발표 준비: 2시간으로 추정")).toBeNull();
   });
 });
+
+
+describe("C안 시작 화면", () => {
+  it("shows the character-centered input without removing the existing plan flow", async () => {
+    await openInput();
+    expect(screen.getByRole("heading", { name: "오늘은 뭐 할 거뇽?" })).toBeTruthy();
+    expect(screen.getByAltText("안뇽이 캐릭터")).toBeTruthy();
+    const startScreen = document.querySelector(".app-shell");
+    expect(startScreen?.classList.contains("landing-mode")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "내 계획 보기" }));
+    await screen.findByText("하나씩 하면, 괜찮아요.");
+    expect(startScreen?.classList.contains("landing-mode")).toBe(false);
+  });
+
+  it("fills the example without submitting and keeps it when returning from the plan", async () => {
+    await openInput();
+    fireEvent.click(screen.getByRole("button", { name: /예시 사용하기/ }));
+    const exampleText = (screen.getByLabelText("어떤 일을 해야 하나요?") as HTMLTextAreaElement).value;
+    expect(exampleText).toContain("물리 과제");
+    expect(exampleText.split("\n")).toHaveLength(3);
+    expect(requests.some((request) => request.method === "POST")).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "내 계획 보기" }));
+    await screen.findByText("하나씩 하면, 괜찮아요.");
+    const returnButton = screen.getByRole("button", { name: "할 일 정리" });
+    await waitFor(() => expect((returnButton as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(returnButton);
+    expect((screen.getByLabelText("어떤 일을 해야 하나요?") as HTMLTextAreaElement).value).toBe(exampleText);
+    expect(document.querySelector(".app-shell")?.classList.contains("landing-mode")).toBe(true);
+  });
+
+  it("keeps the existing session controls mounted across landing navigation", async () => {
+    await openInput();
+    const controls = screen.getByRole("region", { name: "한 줄 집중 세션" });
+    fireEvent.change(screen.getByLabelText("지금 공부할 일"), {
+      target: { value: "전자기 유도 공부" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "내 계획 보기" }));
+    await screen.findByText("하나씩 하면, 괜찮아요.");
+    expect(screen.getByRole("region", { name: "한 줄 집중 세션" })).toBe(controls);
+    expect((screen.getByLabelText("지금 공부할 일") as HTMLInputElement).value).toBe("전자기 유도 공부");
+  });
+});
