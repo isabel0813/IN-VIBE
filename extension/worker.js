@@ -79,7 +79,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     try {
       const tab = await chrome.tabs.get(challenge.tabId);
       const window = await chrome.windows.get(challenge.windowId);
-      const valid = enabled && status.collecting && epoch === challenge.epoch && tab.active && tab.url === challenge.url && window.state !== "minimized";
+      const valid = enabled && status.collecting && epoch === challenge.epoch && tab.active && tab.windowId === challenge.windowId && tab.url === challenge.url && window.state !== "minimized";
       challenge.finish(valid ? observation : null); reply({ ok: valid });
     } catch { challenge.finish(null); reply({ ok: false }); }
   })().catch(() => { clear(); reply({ ok: false }); });

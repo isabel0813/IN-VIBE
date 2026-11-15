@@ -235,6 +235,67 @@ impl Pipe {
 mod tests {
     use super::*;
     #[test]
+    fn synthetic_snapshot_roundtrip_and_reconnect_on_isolated_windows_pipe() {
+        // A test-only pipe suffix keeps the running Tauri app and its consent
+        // state out of this transport test. No actual browser data is read.
+        let suffix = format!(".snapshot-test.{}", std::process::id());
+        let mut server = Pipe::server_named(&suffix).unwrap();
+        for round in 1..=2 {
+            let client_suffix = suffix.clone();
+            let worker = std::thread::spawn(move || {
+                let message = crate::Message {
+                    version: 1,
+                    kind: "snapshot".into(),
+                    generation: round,
+                    seq: 1,
+                    observation: None,
+                    observations: vec![crate::Observation {
+                        kind: "watch".into(),
+                        video_id: Some("abcdefghijk".into()),
+                        title: "[합성 데이터] 전자기 유도 강의 🐉".into(),
+                        playing: true,
+                    }],
+                };
+                assert!(message.valid());
+                let bytes = serde_json::to_vec(&message).unwrap();
+                let mut client = Pipe::client_named(&client_suffix).unwrap();
+                let response = client.request(&bytes).unwrap();
+                let status: crate::Status = serde_json::from_slice(&response).unwrap();
+                assert!(status.connected);
+                assert!(!status.collecting);
+                assert_eq!(status.generation, round);
+            });
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while !server.connect().unwrap() {
+                assert!(Instant::now() < deadline);
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            let message = loop {
+                if let Some(frame) = server.receive().unwrap() {
+                    break serde_json::from_slice::<crate::Message>(&frame).unwrap();
+                }
+                assert!(Instant::now() < deadline);
+                std::thread::sleep(Duration::from_millis(5));
+            };
+            assert!(message.valid());
+            assert_eq!(message.kind, "snapshot");
+            assert_eq!(message.observations[0].title, "[합성 데이터] 전자기 유도 강의 🐉");
+            assert_eq!(message.generation, round);
+            // This is a fixture response, not a real Tauri consent decision.
+            let status = crate::Status {
+                kind: "status".into(),
+                connected: true,
+                collecting: false,
+                generation: round,
+            };
+            server.send(&serde_json::to_vec(&status).unwrap()).unwrap();
+            worker.join().unwrap();
+            assert!(server.receive().is_err());
+            server.disconnect();
+        }
+    }
+
+    #[test]
     fn real_windows_pipe_roundtrip_exclusive_and_disconnect() {
         let suffix = format!(".test.{}", std::process::id());
         let mut server = Pipe::server_named(&suffix).unwrap();
