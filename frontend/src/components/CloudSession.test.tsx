@@ -2,11 +2,13 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, cleanup } from "@testing-library/react";
 const mocks = vi.hoisted(() => ({ session: { running: false, paused: false, task: null as null | {id:number;name:string} }, send: vi.fn(), invoke: vi.fn(), show: vi.fn() }));
 vi.mock("../desktop/bridge", () => ({ isDesktop: () => true, showWidget: mocks.show }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: (command: string) => command === "browser_read"
+  ? Promise.resolve({ consent: true, collecting: true }) : mocks.invoke(command) }));
 vi.mock("../session/store", () => ({ useFocusSession: () => ({ session: mocks.session, ready: true }), sessionStore: { send: mocks.send } }));
 import CloudSession, { CloudQuestion } from "./CloudSession";
+import { cloudMemory } from "./cloudMemory";
 beforeEach(() => {
-  localStorage.clear(); vi.clearAllMocks();
+  localStorage.clear(); cloudMemory.reset(); vi.clearAllMocks();
   mocks.session = { running: false, paused: false, task: null };
   mocks.send.mockImplementation(async action => { mocks.session = { running: action.type === "start", paused: false, task: action.task ?? null }; });
   mocks.invoke.mockResolvedValue([{title:"Minecraft gameplay",videoId:"gBGM0l4hulw"}]);
@@ -96,17 +98,17 @@ it("retains failed corrections for an explicit retry", async () => {
 });
 
 it("a late feedback response cannot overwrite a different video's question", async () => {
-  const key='mobonyong.cloud-session';
   const first={id:7,task:'공부',ask:{title:'first gameplay',video_id:'abcdefghijk'},reason:'게임'};
   const second={...first,ask:{title:'second gameplay',video_id:'zyxwvutsrqp'}};
   let finish!: (response:Response)=>void;
   vi.stubGlobal('fetch',vi.fn(()=>new Promise<Response>(resolve=>{finish=resolve;})));
-  localStorage.setItem(key,JSON.stringify(first)); render(<CloudQuestion />);
+  cloudMemory.set(first); render(<CloudQuestion />);
   fireEvent.click(screen.getByRole('button',{name:'아니? 전혀~'}));
-  localStorage.setItem(key,JSON.stringify(second)); fireEvent(window,new Event(key));
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+  cloudMemory.set(second);
   await screen.findByText('second gameplay');
   finish(new Response('{}'));
   await waitFor(()=>expect((screen.getByRole('button',{name:'아니? 전혀~'}) as HTMLButtonElement).disabled).toBe(false));
-  expect(JSON.parse(localStorage.getItem(key)!).ask.video_id).toBe('zyxwvutsrqp');
-  expect(JSON.parse(localStorage.getItem(`${key}.dismissed`)!).videos).toContain('abcdefghijk');
+  expect(cloudMemory.read()!.ask!.video_id).toBe('zyxwvutsrqp');
+  expect(cloudMemory.dismissed()).toContain('abcdefghijk');
 });

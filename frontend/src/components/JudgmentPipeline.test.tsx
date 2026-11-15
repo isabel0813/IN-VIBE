@@ -3,12 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   session: { running: false, paused: false, task: null as null | { id: number; name: string }, character: "idle", simulated: false },
   invoke: vi.fn(), show: vi.fn(), send: vi.fn(),
+  native: { consent: true, collecting: true },
 }));
 vi.mock("../desktop/bridge", async importOriginal => ({
   ...await importOriginal<typeof import("../desktop/bridge")>(),
   isDesktop: () => true, showWidget: mocks.show,
 }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke, isTauri: () => false }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: (command: string) => command === "browser_read"
+  ? Promise.resolve(mocks.native) : mocks.invoke(command), isTauri: () => false }));
 vi.mock("../session/store", () => ({
   useFocusSession: () => ({ session: mocks.session, ready: true, error: "" }),
   sessionStore: { send: mocks.send },
@@ -18,6 +20,7 @@ vi.mock("../activity/bridge", () => ({
 }));
 import CloudSession from "./CloudSession";
 import Widget from "../widget/Widget";
+import { cloudMemory } from "./cloudMemory";
 
 const key = "mobonyong.cloud-session";
 const game = { title: "합성 게임 플레이", videoId: "abcdefghijk" };
@@ -27,6 +30,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   localStorage.clear();
   requests = [];
+  mocks.native = { consent: true, collecting: true };
   mocks.session = { running: false, paused: false, task: null, character: "idle", simulated: false };
   mocks.send.mockImplementation(async action => {
     mocks.session = { ...mocks.session, running: action.type === "start", paused: false,
@@ -56,6 +60,57 @@ async function start(widget = false) {
 }
 
 describe("synthetic judgment pipeline", () => {
+  it.each(["consent", "collecting"] as const)("clears raw observations after native %s is withdrawn", async field => {
+    await start();
+    await screen.findByText("안뇽이 · 너 혹시 딴짓해?");
+    mocks.native = { ...mocks.native, [field]: false };
+    await sample();
+    expect(cloudMemory.read()).toMatchObject({ ask: null, reason: "" });
+    expect(judging()).toHaveLength(1);
+    expect(mocks.session.running).toBe(true);
+  });
+  it("does not cache a late judgment after native consent withdrawal", async () => {
+    let finish!: (response: Response) => void;
+    const base = respond;
+    let judgments = 0;
+    respond = path => path === "/judge" && judgments++ === 0 ? new Promise(resolve => { finish = resolve; }) : base(path);
+    await start();
+    await waitFor(() => expect(judging()).toHaveLength(1));
+    mocks.native = { consent: false, collecting: false };
+    await sample();
+    await act(async () => finish(Response.json({ action: "ask", reason: "늦은 합성 응답" })));
+    expect(cloudMemory.read()).toMatchObject({ ask: null, reason: "" });
+    mocks.native = { consent: true, collecting: true };
+    await sample();
+    await waitFor(() => expect(judging()).toHaveLength(2));
+    expect(cloudMemory.read()?.reason).not.toBe("늦은 합성 응답");
+  });
+  it("blocks feedback queued before native consent withdrawal", async () => {
+    await start();
+    await screen.findByText("안뇽이 · 너 혹시 딴짓해?");
+    mocks.native = { consent: false, collecting: false };
+    fireEvent.click(screen.getByRole("button", { name: "아니? 전혀~" }));
+    await sample();
+    expect(requests.filter(request => request.path === "/judge/feedback")).toHaveLength(0);
+    expect(cloudMemory.read()?.ask).toBeNull();
+  });
+  it("clears raw question and reason after AI revocation and clears all memory on end", async () => {
+    await start();
+    await screen.findByText("안뇽이 · 너 혹시 딴짓해?");
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(cloudMemory.read()).toMatchObject({ ask: null, reason: "" });
+    fireEvent.click(screen.getByRole("button", { name: "세션 종료" }));
+    await waitFor(() => expect(cloudMemory.read()).toBeNull());
+    expect(cloudMemory.dismissed()).toEqual([]);
+  });
+  it("never persists observed video or session data in localStorage", async () => {
+    const write = vi.spyOn(Storage.prototype, "setItem");
+    await start();
+    await screen.findByText("안뇽이 · 너 혹시 딴짓해?");
+    const activityWrites = write.mock.calls.filter(([name]) => name.startsWith(key));
+    expect(activityWrites).toHaveLength(0);
+    write.mockRestore();
+  });
   it.each([
     ["전자기 유도 강의", "study", "ignore", false],
     [game.title, "other", "ask", true],
@@ -75,6 +130,7 @@ describe("synthetic judgment pipeline", () => {
     let finish!: (videos: typeof game[]) => void;
     mocks.invoke.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
     await start();
+    await waitFor(() => expect(typeof finish).toBe("function"));
     if (stop === "consent") fireEvent.click(screen.getByRole("checkbox"));
     else fireEvent.click(screen.getByRole("button", { name: "세션 종료" }));
     await act(async () => { finish([game]); });

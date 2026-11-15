@@ -6,34 +6,31 @@ import { sessionStore, useFocusSession } from "../session/store";
 import { backgroundVideo, shouldAsk } from "./videoPolicy";
 import type { Judgment } from "./videoPolicy";
 
-const KEY = "mobonyong.cloud-session";
+import { cloudMemory, removeLegacyCloudData } from "./cloudMemory";
+import type { CloudState } from "./cloudMemory";
 const TASK_OFFSET = 1_000_000_000_000;
-type Video = { title: string; video_id: string };
-type CloudState = { id: number; task: string; ask: Video | null; reason: string };
-function read(): CloudState | null {
-  try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch { return null; }
-}
-function write(value: CloudState | null) {
-  if (value) localStorage.setItem(KEY, JSON.stringify(value));
-  else localStorage.removeItem(KEY);
-  window.dispatchEvent(new Event(KEY));
-}
+function read(): CloudState | null { return cloudMemory.read(); }
+function write(value: CloudState | null) { cloudMemory.set(value); }
 function dismiss(value: CloudState) {
+  return value.ask ? cloudMemory.dismiss(value.id, value.ask.video_id) : Promise.resolve();
+}
+async function correct(value: CloudState) {
+  await cloudMemory.refresh();
   const current = read();
-  if (current?.id !== value.id) return;
-  const old = JSON.parse(localStorage.getItem(`${KEY}.dismissed`) || "null");
-  const videos = old?.id === value.id ? old.videos : [];
-  localStorage.setItem(`${KEY}.dismissed`, JSON.stringify({ id: value.id, videos: [...new Set([...videos, value.ask?.video_id])] }));
-  if (current.ask?.video_id !== value.ask?.video_id) return;
-  write({ ...current, ask: null });
+  // Read the main-owned memory again before sending a correction.
+  if (current?.id !== value.id || current.ask?.video_id !== value.ask?.video_id) return;
+  if (isDesktop()) {
+    const native = await invoke<{ consent: boolean; collecting: boolean }>("browser_read");
+    if (!native.consent || !native.collecting) return;
+  }
+  if (read()?.ask?.video_id !== value.ask?.video_id || read()?.id !== value.id) return;
+  await api.feedback(value.id, value.ask!);
+  await dismiss(value);
 }
 export function useCloudSession() {
   const [value, setValue] = useState(read);
   useEffect(() => {
-    const update = () => setValue(read());
-    window.addEventListener("storage", update);
-    window.addEventListener(KEY, update);
-    return () => { window.removeEventListener("storage", update); window.removeEventListener(KEY, update); };
+    return cloudMemory.subscribe(() => setValue(read()));
   }, []);
   return value;
 }
@@ -47,9 +44,9 @@ export function CloudQuestion() {
     <button disabled={busy} onClick={async () => {
       if (lock.current) return;
       lock.current = true; setBusy(true); setError("");
-      try { await api.feedback(value.id, value.ask!); dismiss(value); }
+      try { await correct(value); }
       catch (e) { setError(String(e)); } finally { lock.current = false; setBusy(false); }
-    }}>아니? 전혀~</button><button disabled={busy} onClick={() => dismiss(value)}>맞아, 공부로 돌아갈게</button>
+    }}>아니? 전혀~</button><button disabled={busy} onClick={() => { void dismiss(value).catch(e => setError(String(e))); }}>맞아, 공부로 돌아갈게</button>
     {error && <p role="alert">{error}</p>}
   </section>;
 }
@@ -66,8 +63,13 @@ export function useCloudController() {
   const dismissed = useRef(new Set<string>());
   const startLock = useRef(false);
   const active = useRef<number | null>(null);
+  const observationEpoch = useRef(0);
   // Relaunch never silently resumes a server session or cloud transmission.
-  useEffect(() => { write(null); }, []);
+  useEffect(() => {
+    if (!removeLegacyCloudData()) setError("이전 영상 저장 정보를 지우지 못했어요. 로컬 저장소 접근을 확인해 주세요.");
+    cloudMemory.reset();
+    return () => cloudMemory.reset();
+  }, []);
   useEffect(() => {
     if (!ready || !value || read()?.id !== value.id) return;
     if (!session.running || session.task?.id !== TASK_OFFSET + value.id) {
@@ -77,8 +79,9 @@ export function useCloudController() {
   }, [ready, session.running, session.task?.id, value]);
   useEffect(() => {
     active.current = value?.id ?? null;
+    if (!value || !consent) { observationEpoch.current++; judgments.current.clear(); dismissed.current.clear(); }
     if (!value || !consent || !isDesktop() || !session.running || session.paused) {
-      if (value?.ask) write({ ...value, ask: null });
+      if (value?.ask || value?.reason) write({ ...value, ask: null, reason: "" });
       return;
     }
     let cancelled = false;
@@ -88,18 +91,28 @@ export function useCloudController() {
       if (reading) return;
       reading = true;
       try {
+        const native = await invoke<{ consent: boolean; collecting: boolean }>("browser_read");
+        if (cancelled || active.current !== id || read()?.id !== id) return;
+        if (!native.consent || !native.collecting) {
+          observationEpoch.current++;
+          judgments.current.clear(); dismissed.current.clear();
+          const current = read();
+          if (current?.ask || current?.reason) write({ ...current, ask: null, reason: "" });
+          return;
+        }
         const videos = await invoke<{ title: string; videoId: string }[]>("browser_videos");
         if (cancelled || active.current !== id || read()?.id !== id) return;
-        const dismissedValue = JSON.parse(localStorage.getItem(`${KEY}.dismissed`) || "null");
-        if (dismissedValue?.id === id) for (const video of dismissedValue.videos) dismissed.current.add(video);
+        for (const video of cloudMemory.dismissed()) dismissed.current.add(video);
         const eligible = videos.filter(video => !backgroundVideo(video.title));
         for (const video of eligible) {
           const key = `${id}:${video.videoId}`;
           if (judgments.current.has(key) || dismissed.current.has(video.videoId)) continue;
           judgments.current.set(key, null);
+          const epoch = observationEpoch.current;
           // Keep sampling during slow AI requests so hidden/paused videos dismiss
           // immediately. A cached result can be used when a video becomes visible again.
           void api.judge(id, { title: video.title, video_id: video.videoId }).then(result => {
+            if (cancelled || active.current !== id || observationEpoch.current !== epoch) return;
             if (result.action !== "ask" && result.action !== "ignore") throw new Error("AI 응답 형식을 확인해 주세요.");
             judgments.current.set(key, result);
             if (!cancelled) void poll();
@@ -113,7 +126,13 @@ export function useCloudController() {
         const next = asking.find(video => video.videoId === current.ask?.video_id) ?? asking[0];
         const ask = next ? { title: next.title, video_id: next.videoId } : null;
         if (current.ask?.video_id !== ask?.video_id) write({ ...current, ask, reason: next ? judgments.current.get(`${id}:${next.videoId}`)!.reason : "" });
-      } catch (e) { if (!cancelled) setError(`영상 판단 실패 · 이 영상의 자동 재시도는 멈췄어요. ${String(e)}`); }
+      } catch (e) {
+        if (!cancelled) {
+          const current = read();
+          if (current?.id === id && current.ask) write({ ...current, ask: null });
+          setError(`영상 관측을 확인하지 못했어요. ${String(e)}`);
+        }
+      }
       finally { reading = false; }
     }
     void poll(); const timer = setInterval(() => void poll(), 1000);
@@ -131,7 +150,7 @@ export function useCloudController() {
     try {
       created = await api.startSession(task.trim());
       await sessionStore.send({ type: "start", task: { id: TASK_OFFSET + created.id, name: created.task } });
-      judgments.current.clear(); dismissed.current.clear(); localStorage.removeItem(`${KEY}.dismissed`);
+      judgments.current.clear(); dismissed.current.clear();
       write({ ...created, ask: null, reason: "" });
       await showWidget(true);
     } catch (e) {
