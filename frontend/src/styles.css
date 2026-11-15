@@ -1408,6 +1408,26 @@ main {
   font-size: 14px;
   resize: vertical;
 }
+.landing-composer .landing-task-input {
+  display: block;
+  width: 100%;
+  height: clamp(72px, 12vh, 104px);
+  padding: 12px 23px;
+  border: 0;
+  background: transparent;
+  font-size: 14px;
+}
+.landing-composer .landing-task-input:focus-visible { outline-offset: -4px; }
+/* Hidden views stay mounted to preserve consent/controller state. */
+.app-shell[hidden], .landing-body[hidden], .focus-settings-content[hidden] { display: none; }
+.focus-settings .workspace { margin-left: 0; }
+.focus-settings main { max-width: 980px; padding: 0 clamp(20px, 5vw, 62px); }
+.focus-settings-content { margin-block: 20px; line-height: 1.8; }
+.focus-settings-content h1 { font-size: 28px; margin-bottom: 24px; }
+.focus-settings-content p, .focus-settings-content label { font-size: 13px; color: #bac8dd; }
+.focus-settings-content p { margin-block: 14px; }
+.focus-settings-content a { color: #94bdff; }
+.legacy-return { padding: 12px 24px; background: #101622; }
 .landing-composer .composer-bottom { padding: 0 18px 14px 23px; }
 .landing-composer .primary { border-radius: 12px; }
 .landing-mini-actions {

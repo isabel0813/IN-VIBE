@@ -268,7 +268,7 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
                 })
               }
             >
-              계획 보기 ↗
+              집중 화면 보기 ↗
             </button>
             <button
               disabled={busy}
@@ -279,7 +279,7 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
                 })
               }
             >
-              할 일 추가하기 ＋
+              할 일 입력하기 ＋
             </button>
           </div>
           <div className="pet-session-actions">

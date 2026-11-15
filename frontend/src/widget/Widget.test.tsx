@@ -80,7 +80,7 @@ describe("Annyong widget preview behavior", () => {
     await waitFor(() =>
       expect(sessionStore.getSnapshot().session.paused).toBe(false),
     );
-    const plan = screen.getByRole("button", { name: /계획 보기/ });
+    const plan = screen.getByRole("button", { name: /집중 화면 보기/ });
     await waitFor(() =>
       expect((plan as HTMLButtonElement).disabled).toBe(false),
     );
