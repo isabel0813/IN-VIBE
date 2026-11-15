@@ -1,4 +1,4 @@
-# 바꿔도 돼? · Frontend
+# 뭐보뇽 · Frontend
 
 React + Vite + TypeScript 웹앱과 Tauri 2 Windows 앱입니다. 기존 FastAPI를 사용하며 별도 프론트엔드 서버 저장소나 로그인은 없습니다. 데스크톱 실행·위젯 구조는 [데스크톱 안내](docs/desktop.md), 활동 감지·복구와 최신 검증 범위는 [Windows MVP 안내](docs/windows-mvp.md)를 참고하세요.
 
@@ -14,13 +14,47 @@ npm.cmd run dev
 
 브라우저에서 터미널에 표시된 주소(기본 `http://127.0.0.1:5173`)를 엽니다. macOS/Linux에서는 `npm.cmd` 대신 `npm`을 사용합니다. Windows에서 PowerShell 실행 정책으로 `npm.ps1`이 차단될 때도 `npm.cmd`로 실행할 수 있습니다.
 
-백엔드는 별도 터미널에서 [기존 실행 안내](../backend/README.md)에 따라 `--port 8010`으로 실행합니다. Windows의 8000 포트 충돌을 피하도록 기본 연결 주소는 `http://127.0.0.1:8010`입니다. 백엔드 주소를 바꾸려면 `.env.example`을 `.env.local`로 복사해 수정한 뒤 Vite를 재시작합니다. `.env.local`은 Git에서 제외됩니다. Windows Python에는 `tzdata`가 필요합니다(백엔드 의존성 목록 반영은 백엔드 담당자와 협의).
+백엔드는 별도 터미널에서 **8010 포트**로 실행합니다. 개발 기본 API 주소도 `http://127.0.0.1:8010`입니다. 백엔드 README의 기본 8000 포트로 실행하면 이 프론트엔드와 연결되지 않습니다. 이미 8010에서 정상 실행 중이면 중복 실행하거나 프로세스를 종료하지 마세요.
+
+저장소 루트에서 Windows PowerShell로 실행합니다. 기존 `.venv`가 있으면 생성·설치 단계는 생략할 수 있습니다.
+
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8010
+```
+
+실행 파일이 `python` 대신 `py`로 설치된 PC는 가상환경 생성에 `py -m venv .venv`를 사용합니다. Windows의 `Asia/Seoul` 시간대에 필요한 `tzdata`는 현재 `backend/requirements.txt`에 포함되어 있습니다. API 키 없이도 직접 입력·저장·계획·완료·세션 생성/종료는 사용 가능합니다.
+
+다른 터미널에서 `frontend`로 이동한 뒤 `npm.cmd run dev`(웹) 또는 `npm.cmd run desktop:dev`(Tauri)를 실행합니다. Tauri는 Vite도 시작하므로 두 명령을 동시에 실행하지 마세요. 이미 이 프로젝트의 Vite가 5173을 사용 중이면 해당 터미널의 서버만 먼저 종료하거나 기존 개발 앱을 사용합니다.
+
+백엔드 주소를 바꾸려면 `.env.local`의 아래 값을 수정한 뒤 Vite를 재시작합니다. `.env.local`이 없다면 `.env.example`을 복사하되, 기존 파일을 덮어쓰지 마세요. `.env.local`은 Git에서 제외됩니다.
 
 ```dotenv
 VITE_API_BASE_URL=http://127.0.0.1:8010
 ```
 
 `VITE_` 환경변수는 클라이언트 번들에 포함됩니다. 비밀 키를 넣지 마세요. 다른 기기에서 접속할 때에는 해당 기기에서 접근 가능한 백엔드 주소와 백엔드 `CORS_ORIGINS` 설정이 필요합니다. 빌드 후에는 환경변수 변경 시 다시 빌드해야 합니다.
+
+명시적 설정이 없을 때 개발 모드는 8010, production 빌드는 `https://api.mobonyong.com`을 사용합니다. **`.env.local`은 production 빌드에도 적용**되므로 로컬 검증용 빌드를 운영 배포로 혼동하지 마세요. 배포 환경에서는 `VITE_API_BASE_URL=https://api.mobonyong.com`을 명시해야 합니다. 현재 Tauri CSP는 운영 API와 로컬 8010을 모두 허용합니다.
+
+### 연결 오류와 AI 설정 오류 구분
+
+- `서버에 연결할 수 없어요`: HTTP 응답을 받지 못한 상태입니다. 8010 실행 여부, 실제 Vite의 API 주소, CORS를 확인하고 시작 화면의 **다시 연결**을 누르세요. 서버가 앱보다 늦게 켜졌으면 이전 오류가 재연결 전까지 남을 수 있습니다.
+- `서버에는 연결됐지만 AI API 키가 설정되지 않았어요`: `/tasks/parse` 또는 `/judge`에서 키 미설정 503을 받았습니다. AI 키는 **백엔드 프로세스의 `ANTHROPIC_API_KEY` 환경변수에만** 설정하고 백엔드를 재시작해야 합니다. 프론트엔드 `.env.local`이나 `VITE_` 변수에 넣지 마세요. 기존 [백엔드 AI 설정 안내](../backend/README.md)를 참고하세요.
+- 기타 AI 503은 제공자 설정/사용 불가로 표시하며 키 미설정으로 단정하지 않습니다. 파싱 실패 시 원문을 유지한 직접 입력 화면으로 이동합니다. AI 실패는 저장·계획 API 실패와 별개입니다.
+
+읽기 전용 연결 검사(임의의 새 사용자 ID 사용):
+
+```powershell
+$headers = @{ 'X-User-Id' = [guid]::NewGuid().ToString() }
+foreach ($route in '/health', '/tasks', '/plan', '/settings') {
+  Invoke-RestMethod -Uri "http://127.0.0.1:8010$route" -Headers $headers
+}
+```
+
+`/health`만 성공해도 전체 기능이 정상인 것은 아닙니다. 나머지 3개 응답도 확인하세요. 사용자 헤더가 없으면 일부 API는 422를 반환합니다. 프론트엔드는 최초 UUID를 저장하고 자동으로 전달합니다.
 
 ## 사용 흐름
 
@@ -65,6 +99,8 @@ src/
 UI와 HTTP 코드를 분리했습니다. 데스크톱에서는 `작업 시작` 시 독립 안뇽이 위젯을 표시하고 메인 창을 숨깁니다. Rust 메모리에서 세션을 공유하며 앱 재시작 후에는 자동 재개하지 않습니다. 웹에서는 OS 창 제어 없는 미리보기를 제공합니다. Windows에서는 명시적 동의 후 활성 창을 로컬 분류하고, 사용자가 확인한 이탈 시간만 계획 복구 API로 전달합니다.
 
 ## 검증
+
+C안 연결 점검의 실제 API/Windows 확인 범위와 미검증 항목은 [2026-11-15 통합 검증 기록](docs/landing-integration.md)을 참고하세요.
 
 ```powershell
 npm.cmd run build

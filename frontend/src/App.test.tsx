@@ -109,6 +109,21 @@ async function parseDraft() {
 }
 
 describe("Phase 1 user flows", () => {
+  it("keeps the original text and opens manual drafts when the real backend reports a missing AI key", async () => {
+    await openInput();
+    vi.mocked(fetch).mockResolvedValueOnce(Response.json({
+      detail: "Claude API를 쓰려면 서버에 ANTHROPIC_API_KEY를 설정해야 해요",
+    }, { status: 503 }));
+    fireEvent.change(screen.getByLabelText("어떤 일을 해야 하나요?"), {
+      target: { value: "내일 물리 과제 30분" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "AI로 할 일 정리" }));
+    await screen.findByLabelText("작업 이름");
+    expect(screen.getByText(/서버에는 연결됐지만 AI API 키가 설정되지 않았어요/)).toBeTruthy();
+    expect(screen.getByText("내일 물리 과제 30분")).toBeTruthy();
+    expect(screen.queryByText("연결을 확인해 주세요")).toBeNull();
+  });
+
   it("parses, reviews assumptions, edits, saves, starts, completes and restores a task", async () => {
     await parseDraft();
     expect(screen.getByText("발표 준비: 2시간으로 추정")).toBeTruthy();
@@ -155,7 +170,7 @@ describe("Phase 1 user flows", () => {
     async (status) => {
       parseStatus = status;
       await parseDraft();
-      expect(screen.getByText(/AI가 할 일을 정리하지 못했어요/)).toBeTruthy();
+      expect(screen.getByText(status === 503 ? /AI 기능을 사용할 수 없어요/ : /AI가 할 일을 정리하지 못했어요/)).toBeTruthy();
       expect(screen.getByText("발표 준비 내일 6시까지")).toBeTruthy();
       fireEvent.change(screen.getByLabelText("작업 이름"), {
         target: { value: "직접 입력한 일" },

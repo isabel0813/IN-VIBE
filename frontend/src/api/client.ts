@@ -56,6 +56,21 @@ async function request<T>(
       signal: controller.signal,
     });
     if (!response.ok) {
+      if (response.status === 503 && (path === "/tasks/parse" || path === "/judge")) {
+        const body: unknown = await response.json().catch(() => null);
+        const missingKey = typeof body === "object" && body !== null &&
+          "detail" in body && typeof body.detail === "string" &&
+          body.detail.includes("ANTHROPIC_API_KEY");
+        // Recognize the backend's configuration error without displaying raw
+        // provider responses, which can contain internal or sensitive details.
+        throw new ApiError(503,
+          (missingKey
+            ? "서버에는 연결됐지만 AI API 키가 설정되지 않았어요. 백엔드의 ANTHROPIC_API_KEY 설정을 확인해 주세요."
+            : "AI 기능을 사용할 수 없어요. 서버의 AI 제공자 설정과 실행 상태를 확인해 주세요.") +
+          (path === "/tasks/parse"
+            ? " 직접 입력으로 계속할 수 있어요."
+            : " 영상 판단에 따른 개입은 보류합니다."));
+      }
       const message =
         path === "/tasks/parse"
           ? "AI가 할 일을 정리하지 못했어요. 직접 입력으로 계속할 수 있어요."

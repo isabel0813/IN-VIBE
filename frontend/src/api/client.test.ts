@@ -75,6 +75,16 @@ describe("API transport", () => {
     );
     await expect(api.tasks()).rejects.toThrow("서버에 연결할 수 없어요");
   });
+  it.each(["parse", "judge"] as const)("distinguishes missing AI credentials from transport failure for %s", async (endpoint) => {
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async () =>
+      Response.json({ detail: "Claude API를 쓰려면 서버에 ANTHROPIC_API_KEY를 설정해야 해요" }, { status: 503 })));
+    const call = () => endpoint === "parse" ? api.parse("과제") : api.judge(1, { title: "강의", video_id: "abcdefghijk" });
+    await expect(call()).rejects.toThrow("서버에는 연결됐지만 AI API 키가 설정되지 않았어요");
+  });
+  it("does not label every AI 503 as a missing key or display raw server details", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ detail: "internal-provider-detail" }, { status: 503 })));
+    await expect(api.parse("과제")).rejects.toThrow("AI 기능을 사용할 수 없어요. 서버의 AI 제공자 설정과 실행 상태를 확인해 주세요. 직접 입력으로 계속할 수 있어요.");
+  });
   it("reports blocked storage instead of silently changing users", () => {
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("blocked");
