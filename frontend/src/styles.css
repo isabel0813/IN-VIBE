@@ -1448,11 +1448,9 @@ main.page-main {
 .hero-character {
   display: grid;
   place-items: center;
-  width: 168px;
-  height: 168px;
-  border-radius: 36px;
-  background: #dfe7f1;
-  margin-bottom: 8px;
+  width: 180px;
+  height: 180px;
+  margin-bottom: 4px;
 }
 .hero-character img {
   width: 148px;
