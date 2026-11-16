@@ -173,7 +173,7 @@ export default function CloudSession({ onOpenTasks, onOpenPlan }: Props = {}) {
       const elapsed = now - t.firstSeen;
       const target: 0 | Stage =
         elapsed >= escalation.ultimateMs ? 3 : elapsed >= escalation.secondMs ? 2 : elapsed >= escalation.firstMs ? 1 : 0;
-      if (target <= t.stage) return;
+      if (target === 0 || target <= t.stage) return;
       if (t.stage >= 1) sendEvent("intervention_answered", { answer: "none", stage: t.stage });
       t.stage = target;
       const current = read();
