@@ -320,15 +320,15 @@ main {
   color: #4d5f77;
 }
 .composer {
-  margin-top: 32px;
-  background: linear-gradient(130deg, #e2e7ed, #e7ebf0);
-  border: 1px solid #aebdd1;
+  margin-top: 8px;
+  background: #ffffff;
+  border: 1px solid #d6dfea;
   border-radius: 12px;
-  box-shadow: 0 12px 40px #fafbfc2e;
+  box-shadow: 0 12px 40px #1c27362e;
   overflow: hidden;
 }
 .composer:focus-within {
-  border-color: #49668d;
+  border-color: #97a9c1;
 }
 .composer-heading {
   display: flex;
@@ -388,13 +388,13 @@ main {
   white-space: nowrap;
 }
 .primary {
-  background: #56769f;
-  color: #e3e8ee;
+  background: #2b3a52;
+  color: #ffffff;
   font-weight: 650;
-  box-shadow: 0 2px 3px #fbfbfb22;
+  box-shadow: 0 2px 3px #1c273622;
 }
 .primary:hover:not(:disabled) {
-  background: #56769f;
+  background: #1f2b3e;
 }
 .secondary {
   background: #dae0e8;
