@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { api } from "../api/client";
 import { isDesktop, showWidget } from "../desktop/bridge";
 import { sessionStore, useFocusSession } from "../session/store";
-import { characterArt } from "../widget/character";
+import { annyongArt } from "../widget/character";
 import Icon from "./Icon";
 
 const KEY = "mobonyong.cloud-session";
@@ -141,7 +141,7 @@ export default function CloudSession({ onOpenTasks, onOpenPlan }: Props = {}) {
   return (
     <section className="home-hero" aria-label="한 줄 집중 세션">
       <div className="hero-character">
-        <img src={value ? characterArt.focus : characterArt.idle} alt="" />
+        <img src={annyongArt} alt="" />
       </div>
       {value ? (
         <>
