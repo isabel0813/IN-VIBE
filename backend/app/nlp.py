@@ -126,6 +126,7 @@ def _call_anthropic(system: str, user_message: str) -> str:
         {
             "model": os.getenv("LLM_MODEL", DEFAULT_ANTHROPIC_MODEL),
             "max_tokens": 1024,
+            "temperature": 0,
             "system": system,
             "messages": [{"role": "user", "content": user_message}],
         },
