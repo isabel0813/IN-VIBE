@@ -128,7 +128,11 @@ impl Browser {
         let previous = self.latest.as_ref().and_then(|(o, _)| o.video_id.clone());
         let selected = videos
             .iter()
-            .find(|o| o.video_id == previous)
+            .find(|o| {
+                native.process.eq_ignore_ascii_case("chrome.exe")
+                    && title_matches(&native.title, &o.title)
+            })
+            .or_else(|| videos.iter().find(|o| o.video_id == previous))
             .or(videos.first());
         if let Some(o) = selected {
             let at = self
@@ -142,6 +146,25 @@ impl Browser {
                 self.discontinuous = true;
             }
             self.latest = Some((o.clone(), at));
+            // A visible background player proves playback, not active use.
+            // Keep it observable without accumulating a local suspect streak.
+            if !native.process.eq_ignore_ascii_case("chrome.exe")
+                || !title_matches(&native.title, &o.title)
+            {
+                self.view.observing = true;
+                self.consumed = None;
+                self.discontinuous = true;
+                return Decision::Observe(
+                    Sample {
+                        process: "chrome.exe".into(),
+                        title: o.title.clone(),
+                        idle: false,
+                    },
+                    at,
+                    format!("youtube:{}", o.video_id.as_deref().unwrap_or("")),
+                    Category::Unknown,
+                );
+            }
             return self.choose(
                 &Sample {
                     process: "chrome.exe".into(),
@@ -284,6 +307,74 @@ fn title_matches(window: &str, video: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn background_playback_is_observable_but_never_a_local_suspect() {
+        let mut b = Browser::default();
+        b.view.consent = true;
+        let m = message(b.generation, true);
+        b.accept(&m, 1000, true);
+        let titles = vec!["게임 플레이 - YouTube".into()];
+        let background = Sample {
+            process: "Code.exe".into(),
+            title: "notes".into(),
+            idle: false,
+        };
+        assert_eq!(b.visible_videos(1100, &titles).len(), 1);
+        assert!(matches!(
+            b.choose_visible(&background, "공부", 1100, &titles),
+            Decision::Observe(_, _, _, Category::Unknown)
+        ));
+        assert!(b.view.observing && b.discontinuous);
+        let foreground = Sample {
+            process: "chrome.exe".into(),
+            title: titles[0].clone(),
+            idle: true,
+        };
+        assert!(matches!(
+            b.choose_visible(&foreground, "공부", 1200, &titles),
+            Decision::Observe(_, _, _, Category::Suspect)
+        ));
+    }
+    #[test]
+    fn foreground_video_is_preferred_over_a_previous_background_player() {
+        let mut b = Browser::default();
+        b.view.consent = true;
+        let mut m = message(b.generation, true);
+        let first = m.observation.take().unwrap();
+        m.kind = "snapshot".into();
+        m.observations = vec![
+            first.clone(),
+            Observation {
+                video_id: Some("zyxwvutsrqp".into()),
+                title: "전자기 유도 강의".into(),
+                ..first
+            },
+        ];
+        b.accept(&m, 1000, true);
+        let titles = vec![
+            "게임 플레이 - YouTube".into(),
+            "전자기 유도 강의 - YouTube".into(),
+        ];
+        let native = Sample {
+            process: "Code.exe".into(),
+            title: "notes".into(),
+            idle: false,
+        };
+        b.choose_visible(&native, "전자기 유도 공부", 1100, &titles);
+        let focused = Sample {
+            process: "chrome.exe".into(),
+            title: titles[1].clone(),
+            idle: false,
+        };
+        assert!(matches!(
+            b.choose_visible(&focused, "전자기 유도 공부", 1200, &titles),
+            Decision::Observe(_, _, _, Category::Related)
+        ));
+        assert_eq!(
+            b.latest.as_ref().unwrap().0.video_id.as_deref(),
+            Some("zyxwvutsrqp")
+        );
+    }
     #[test]
     fn notification_prefix_does_not_strip_a_real_video_title() {
         assert!(title_matches("(2) chapter - YouTube", "(2) chapter"));
@@ -487,7 +578,7 @@ mod tests {
         };
         assert!(matches!(
             b.choose_visible(&editor, "공부", 1100, &titles),
-            Decision::Observe(Sample { idle: false, .. }, _, _, Category::Suspect)
+            Decision::Observe(Sample { idle: false, .. }, _, _, Category::Unknown)
         ));
         assert!(b.visible_videos(1100, &[]).is_empty()); // fully covered/minimized/window not matched
         m.observations = vec![second];
