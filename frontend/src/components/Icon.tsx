@@ -7,7 +7,9 @@ type IconName =
   | "list"
   | "play"
   | "close"
-  | "refresh";
+  | "refresh"
+  | "menu"
+  | "back";
 const paths: Record<IconName, string> = {
   arrow: "M5 12h14m-6-6 6 6-6 6",
   plus: "M12 5v14M5 12h14",
@@ -19,6 +21,8 @@ const paths: Record<IconName, string> = {
   close: "m6 6 12 12M6 18 18 6",
   refresh:
     "M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1",
+  menu: "M4 7h16M4 12h16M4 17h16",
+  back: "M19 12H5m6-6-6 6 6 6",
 };
 export default function Icon({ name }: { name: IconName }) {
   return (

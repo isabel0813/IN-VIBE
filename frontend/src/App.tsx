@@ -18,16 +18,18 @@ import DevControls from "./widget/DevControls";
 import ActivityControls from "./activity/ActivityControls";
 import CloudSession from "./components/CloudSession";
 
-type Step = "input" | "review" | "plan";
-const example =
-  "물리 과제 내일 밤 10시까지, 2시간 정도 걸려\n금요일 오후 6시까지 프로젝트 발표 준비, 중요해\n이번 주 토요일까지 읽던 책 마저 읽기";
+type Step = "home" | "input" | "review" | "plan";
+const INSTALL_URL = "/install.html";
+const DOWNLOAD_URL =
+  "https://github.com/isabel0813/IN-VIBE/releases/download/v0.2.0-incamp-20261114/Mobonyong-Windows-MVP.zip";
 const errorMessage = (error: unknown) =>
   error instanceof Error
     ? error.message
     : "요청을 처리하지 못했어요. 다시 시도해 주세요.";
 
 export default function App() {
-  const [step, setStep] = useState<Step>("input");
+  const [step, setStep] = useState<Step>("home");
+  const [menuOpen, setMenuOpen] = useState(false);
   const [text, setText] = useState("");
   const [drafts, setDrafts] = useState<EditableDraft[]>([]);
   const [assumptions, setAssumptions] = useState<string[]>([]);
@@ -54,7 +56,7 @@ export default function App() {
   const parseController = useRef<AbortController | null>(null);
   const busy = saving || refreshing || sessionBusy;
 
-  const refresh = useCallback(async (initial = false) => {
+  const refresh = useCallback(async () => {
     const version = ++requestVersion.current;
     const sessionRevision = sessionStore.getSnapshot().session.revision;
     setRefreshing(true);
@@ -92,7 +94,6 @@ export default function App() {
             .send(action)
             .catch((error) => setNotice(errorMessage(error)));
       }
-      if (initial && nextTasks.length) setStep("plan");
     } catch (error) {
       if (version === requestVersion.current) {
         setConnectionError(errorMessage(error));
@@ -154,7 +155,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    void refresh(true);
+    void refresh();
     return () => {
       requestVersion.current++;
       parseController.current?.abort();
@@ -274,106 +275,148 @@ export default function App() {
     }
   }
 
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuOpen(false);
+    };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [menuOpen]);
+
   function addTasks() {
     setStep("input");
     setNotice("");
     setFormError("");
+    setMenuOpen(false);
   }
+  function openPlan() {
+    setStep("plan");
+    setNotice("");
+    setMenuOpen(false);
+    void refresh();
+  }
+  function goHome() {
+    setStep("home");
+    setNotice("");
+    setFormError("");
+    setMenuOpen(false);
+  }
+  const pageTitle =
+    step === "plan" ? "나의 계획" : step === "review" ? "할 일 확인" : "할 일 정리";
+  const openCount = tasks.filter((task) => !task.done).length;
 
   return (
-    <div className="app-shell">
+    <div className="app-shell clean">
       <a className="skip-link" href="#main-content">
         본문으로 건너뛰기
       </a>
-      <aside className="sidebar">
-        <a
-          className="brand"
-          href="#"
-          onClick={(event) => {
-            event.preventDefault();
-            if (!busy && !parsing) addTasks();
-          }}
+      <header className="home-bar">
+        <button
+          className="home-brand"
+          disabled={busy || parsing}
+          onClick={goHome}
         >
-          <span className="brand-mark">
-            <Icon name="check" />
+          <span className="home-brand-mark" aria-hidden="true">
+            <Icon name="spark" />
           </span>
-          <span>
-            뭐보뇽
-            <small>나의 다음 한 걸음</small>
-          </span>
-        </a>
-        <div className="sidebar-label">MY SPACE</div>
-        <nav aria-label="주 메뉴">
+          뭐보뇽
+        </button>
+        <div className="home-bar-actions">
+          {session.running && (
+            <span className="home-bar-status">
+              <span className="live-dot" aria-hidden="true" />
+              {session.paused ? "일시정지" : "집중 중"}
+            </span>
+          )}
           <button
-            className={step !== "plan" ? "nav-item selected" : "nav-item"}
+            className="round-button"
+            aria-label="자세한 계획 열기"
+            title="나의 계획"
+            disabled={busy || parsing}
+            onClick={openPlan}
+          >
+            <Icon name="clock" />
+          </button>
+          <button
+            className="round-button"
+            aria-label="메뉴 열기"
+            aria-expanded={menuOpen}
+            aria-controls="app-menu"
+            title="메뉴"
+            onClick={() => setMenuOpen(true)}
+          >
+            <Icon name="menu" />
+          </button>
+        </div>
+      </header>
+
+      <div
+        className="menu-backdrop"
+        hidden={!menuOpen}
+        onClick={() => setMenuOpen(false)}
+      />
+      <aside
+        id="app-menu"
+        className="menu-drawer"
+        aria-label="메뉴"
+        hidden={!menuOpen}
+      >
+        <div className="menu-head">
+          <strong>메뉴</strong>
+          <button
+            className="icon-button"
+            aria-label="메뉴 닫기"
+            onClick={() => setMenuOpen(false)}
+          >
+            <Icon name="close" />
+          </button>
+        </div>
+        <nav className="menu-nav" aria-label="주 메뉴">
+          <button
+            className={step === "home" ? "menu-item selected" : "menu-item"}
+            disabled={busy || parsing}
+            onClick={goHome}
+          >
+            <Icon name="play" />
+            집중 시작
+          </button>
+          <button
+            className={
+              step === "input" || step === "review"
+                ? "menu-item selected"
+                : "menu-item"
+            }
             disabled={busy || parsing}
             onClick={addTasks}
           >
             <Icon name="plus" />할 일 정리
           </button>
           <button
-            className={step === "plan" ? "nav-item selected" : "nav-item"}
+            className={step === "plan" ? "menu-item selected" : "menu-item"}
             disabled={busy || parsing}
-            onClick={() => {
-              setStep("plan");
-              setNotice("");
-              void refresh();
-            }}
+            onClick={openPlan}
           >
             <Icon name="list" />
             나의 계획
-            <span className="nav-count">
-              {tasks.filter((task) => !task.done).length}
-            </span>
+            <span className="nav-count">{openCount}</span>
           </button>
         </nav>
-        <div className="sidebar-bottom">
-          <div className="small-orbit" aria-hidden="true">
-            ↗
-          </div>
-          <p>
-            계획이 조금 달라져도,
-            <br />
-            <strong>다시 시작하면 되니까.</strong>
-          </p>
-          <span>ONE THING AT A TIME</span>
-        </div>
-      </aside>
-      <div className="workspace">
-        <header className="topbar">
-          <span>
-            나의 공간 <span className="breadcrumb-divider">/</span>{" "}
-            <strong>{step === "plan" ? "나의 계획" : "할 일 정리"}</strong>
-          </span>
-          <div className="connection">
-            <span className={`live-dot ${connectionError ? "offline" : ""}`} />
-            {refreshing
-              ? "불러오는 중"
-              : connectionError
-                ? "연결 확인 필요"
-                : "계획 동기화됨"}
-            <button
-              className="icon-button"
-              aria-label="계획 새로고침"
-              disabled={busy || parsing}
-              onClick={() => void refresh()}
-            >
-              <Icon name="refresh" />
-            </button>
-          </div>
-        </header>
-        <main id="main-content">
-          <div className="desktop-session-bar">
-            <span>
-              {isDesktop()
-                ? "안뇽이 데스크톱"
-                : "안뇽이 웹 미리보기 · OS 창 제어 없음"}
-            </span>
+
+        <section className="menu-section">
+          <h2>안뇽이</h2>
+          <p className="menu-meta">
+            {isDesktop()
+              ? "안뇽이 데스크톱"
+              : "웹 미리보기 · OS 창 제어 없음"}
             {session.running && (
-              <span>
+              <>
+                {" · "}
                 {session.paused ? "일시정지" : "집중 중"} · {session.task?.name}
-              </span>
+              </>
             )}
+          </p>
+          <div className="menu-buttons">
             <button
               disabled={sessionBusy || !sessionReady}
               onClick={() =>
@@ -394,221 +437,216 @@ export default function App() {
                 {isDesktop() ? "위젯으로 돌아가기" : "미리보기 열기"}
               </button>
             )}
-            {sessionError && (
-              <span className="session-error" role="alert">
-                {sessionError}
-                <button onClick={() => void sessionStore.sync()}>
-                  다시 동기화
-                </button>
-              </span>
-            )}
           </div>
-          <CloudSession />
+          {sessionError && (
+            <p className="session-error" role="alert">
+              {sessionError}
+              <button onClick={() => void sessionStore.sync()}>
+                다시 동기화
+              </button>
+            </p>
+          )}
+        </section>
+
+        <section className="menu-section">
+          <h2>딴짓 감지 설정</h2>
           <ActivityControls />
-          <ol className="steps" aria-label="진행 단계">
-            {[
-              ["input", "할 일 입력"],
-              ["review", "확인하기"],
-              ["plan", "작업 시작"],
-            ].map(([key, label], index) => (
-              <li
-                className={step === key ? "current" : ""}
-                aria-current={step === key ? "step" : undefined}
-                key={key}
-              >
-                <span>{String(index + 1).padStart(2, "0")}</span>
-                {label}
-                {index < 2 && <i aria-hidden="true" />}
-              </li>
-            ))}
-          </ol>
-          {connectionError && (
-            <div className="error-banner" role="alert">
-              <strong>연결을 확인해 주세요</strong>
-              <span>{connectionError}</span>
+        </section>
+
+        <section className="menu-section">
+          <h2>설치</h2>
+          <a href={INSTALL_URL} target="_blank" rel="noreferrer">
+            Windows·크롬 설치 안내
+          </a>
+          <a href={DOWNLOAD_URL}>Windows 시험판 다운로드</a>
+        </section>
+
+        <section className="menu-section menu-connection">
+          <span className={`live-dot ${connectionError ? "offline" : ""}`} />
+          {refreshing
+            ? "불러오는 중"
+            : connectionError
+              ? "서버 연결 확인 필요"
+              : "서버 연결됨"}
+          <button
+            className="icon-button"
+            aria-label="새로고침"
+            disabled={busy || parsing}
+            onClick={() => void refresh()}
+          >
+            <Icon name="refresh" />
+          </button>
+        </section>
+      </aside>
+
+      <main id="main-content" className={step === "home" ? "home-main" : "page-main"}>
+        {connectionError && (
+          <div className="error-banner" role="alert">
+            <strong>연결을 확인해 주세요</strong>
+            <span>{connectionError}</span>
+            <button
+              className="text-button"
+              disabled={busy}
+              onClick={() => void refresh()}
+            >
+              다시 연결
+            </button>
+          </div>
+        )}
+        {notice && (
+          <div className="notice" role="status">
+            <Icon name="spark" />
+            <span>{notice}</span>
+            <button
+              className="icon-button"
+              aria-label="알림 닫기"
+              onClick={() => setNotice("")}
+            >
+              <Icon name="close" />
+            </button>
+          </div>
+        )}
+
+        {/* 홈은 항상 마운트해 둔다: 세션·영상 감지가 다른 화면에서도 이어져야 한다. */}
+        <div hidden={step !== "home"}>
+          <CloudSession onOpenTasks={addTasks} onOpenPlan={openPlan} />
+        </div>
+
+        {step !== "home" && (
+          <div className="page-head">
+            <button
+              className="back-button"
+              disabled={busy || parsing}
+              onClick={goHome}
+            >
+              <Icon name="back" />홈
+            </button>
+            <h1>{pageTitle}</h1>
+          </div>
+        )}
+
+        {step === "home" ? null : initialLoading ? (
+          <div className="loading-state" role="status">
+            <span className="spinner" />
+            나의 할 일을 불러오고 있어요.
+          </div>
+        ) : step === "input" ? (
+          <>
+            <form
+              className="composer"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void parse();
+              }}
+            >
+              <div className="composer-heading">
+                <label htmlFor="task-text">
+                  <Icon name="list" />
+                  어떤 일을 해야 하나요?
+                </label>
+                <span>마감과 걸리는 시간을 같이 적으면 좋아요</span>
+              </div>
+              <textarea
+                id="task-text"
+                maxLength={2000}
+                value={text}
+                disabled={parsing}
+                onChange={(event) => setText(event.target.value)}
+                placeholder={
+                  "예를 들면,\n물리 과제 내일 밤 10시까지, 2시간 정도 걸려\n금요일까지 프로젝트 발표 준비, 이건 중요해"
+                }
+              />
+              <div className="composer-bottom">
+                <span>{text.length.toLocaleString()} / 2,000</span>
+                <button
+                  className="primary"
+                  disabled={!text.trim() || parsing}
+                >
+                  {parsing ? (
+                    <>
+                      <span className="spinner" />
+                      정리하는 중…
+                    </>
+                  ) : (
+                    <>
+                      <Icon name="spark" />
+                      AI로 할 일 정리
+                      <Icon name="arrow" />
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+            {parsing && (
+              <p className="helper" role="status">
+                처음에는 AI 준비에 시간이 조금 걸릴 수 있어요. 기다리는 동안
+                직접 입력으로 전환할 수 있어요.
+              </p>
+            )}
+            {formError && (
+              <p className="error-message" role="alert">
+                {formError}
+              </p>
+            )}
+            <div className="input-actions">
+              <span>직접 정리하고 싶다면</span>
               <button
                 className="text-button"
-                disabled={busy}
-                onClick={() => void refresh()}
-              >
-                다시 연결
-              </button>
-            </div>
-          )}
-          {notice && (
-            <div className="notice" role="status">
-              <Icon name="spark" />
-              <span>{notice}</span>
-              <button
-                className="icon-button"
-                aria-label="알림 닫기"
-                onClick={() => setNotice("")}
-              >
-                <Icon name="close" />
-              </button>
-            </div>
-          )}
-          {initialLoading ? (
-            <div className="loading-state" role="status">
-              <span className="spinner" />
-              나의 할 일을 불러오고 있어요.
-            </div>
-          ) : step === "input" ? (
-            <>
-              <div className="intro">
-                <span className="eyebrow">MAKE ROOM FOR WHAT MATTERS</span>
-                <h1>
-                  머릿속 할 일, <br />
-                  여기에 내려놓으세요.
-                </h1>
-                <p>
-                  해야 할 일을 편하게 적어 주세요.
-                  <br />
-                  남은 시간에 맞춰, 지금 시작할 일을 함께 정리할게요.
-                </p>
-              </div>
-              <form
-                className="composer"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void parse();
+                onClick={() => {
+                  setNotice("마감 시간과 예상 시간을 직접 입력해 주세요.");
+                  manual();
                 }}
               >
-                <div className="composer-heading">
-                  <label htmlFor="task-text">
-                    <Icon name="list" />
-                    어떤 일을 해야 하나요?
-                  </label>
-                  <span>한 번에 여러 개도 괜찮아요</span>
-                </div>
-                <textarea
-                  id="task-text"
-                  maxLength={2000}
-                  value={text}
-                  disabled={parsing}
-                  onChange={(event) => setText(event.target.value)}
-                  placeholder={
-                    "예를 들면,\n물리 과제 내일 밤 10시까지, 2시간 정도 걸려\n금요일까지 프로젝트 발표 준비, 이건 중요해"
-                  }
-                />
-                <div className="composer-bottom">
-                  <span>{text.length.toLocaleString()} / 2,000</span>
-                  <button
-                    className="primary"
-                    disabled={!text.trim() || parsing}
-                  >
-                    {parsing ? (
-                      <>
-                        <span className="spinner" />
-                        정리하는 중…
-                      </>
-                    ) : (
-                      <>
-                        <Icon name="spark" />
-                        AI로 할 일 정리
-                        <Icon name="arrow" />
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
-              {parsing && (
-                <p className="helper" role="status">
-                  처음에는 AI 준비에 최대 2분 정도 걸릴 수 있어요. 기다리는 동안
-                  직접 입력으로 전환할 수 있어요.
-                </p>
-              )}
-              {formError && (
-                <p className="error-message" role="alert">
-                  {formError}
-                </p>
-              )}
-              <div className="input-actions">
-                <span>직접 정리하고 싶다면</span>
-                <button
-                  className="text-button"
-                  onClick={() => {
-                    setNotice("마감 시간과 예상 시간을 직접 입력해 주세요.");
-                    manual();
-                  }}
-                >
-                  직접 입력하기 <Icon name="arrow" />
-                </button>
-              </div>
-              <section className="example-card">
-                <span className="example-label">이렇게 적어 보세요</span>
-                <button
-                  className="text-button"
-                  disabled={parsing}
-                  onClick={() => setText(example)}
-                >
-                  예시 사용하기 <Icon name="plus" />
-                </button>
-                <p>“물리 과제 내일 밤 10시까지, 2시간 정도 걸려”</p>
-                <div className="example-tags">
-                  <span>무엇을 할지</span>
-                  <span>언제까지</span>
-                  <span>얼마나 걸릴지</span>
-                </div>
-                <small>
-                  예상 시간을 몰라도 괜찮아요. AI 초안을 보고 수정할 수 있어요.
-                </small>
-              </section>
-              <p className="privacy-note">
-                <span className="tiny-check">✓</span> 입력한 할 일은 확인한 후에
-                저장돼요.
-              </p>
-            </>
-          ) : step === "review" ? (
-            <>
-              {text && (
-                <details className="original-text">
-                  <summary>입력한 원문 보기</summary>
-                  <p>{text}</p>
-                </details>
-              )}
-              <DraftEditor
-                drafts={drafts}
-                onChange={setDrafts}
-                assumptions={assumptions}
-                busy={saving}
-                editing={editingId !== null}
-                error={formError}
-                onSave={() => void save()}
-                onBack={() => {
-                  setStep(editingId !== null ? "plan" : "input");
-                  setFormError("");
-                }}
-              />
-            </>
-          ) : (
-            <PlanView
-              tasks={tasks}
-              plan={plan}
-              settings={settings}
-              busy={busy || !sessionReady}
-              activeId={activeId}
-              paused={session.paused}
-              onStart={(id) => void startSession(id)}
-              onDone={(task) => void toggleDone(task)}
-              onAdd={addTasks}
-              onEdit={(task) => {
-                setEditingId(task.id);
-                setDrafts([editDraft(task)]);
-                setAssumptions([]);
+                직접 입력하기 <Icon name="arrow" />
+              </button>
+            </div>
+          </>
+        ) : step === "review" ? (
+          <>
+            {text && (
+              <details className="original-text">
+                <summary>입력한 원문 보기</summary>
+                <p>{text}</p>
+              </details>
+            )}
+            <DraftEditor
+              drafts={drafts}
+              onChange={setDrafts}
+              assumptions={assumptions}
+              busy={saving}
+              editing={editingId !== null}
+              error={formError}
+              onSave={() => void save()}
+              onBack={() => {
+                setStep(editingId !== null ? "plan" : "input");
                 setFormError("");
-                setNotice("");
-                setStep("review");
               }}
             />
-          )}
-        </main>
-        {import.meta.env.DEV && <DevControls />}
-        {!isDesktop() && <WebWidgetPreview />}
-        <footer className="app-footer">
-          <span>뭐보뇽</span>작은 시작이, 하루를 바꾸니까.
-        </footer>
-      </div>
+          </>
+        ) : (
+          <PlanView
+            tasks={tasks}
+            plan={plan}
+            settings={settings}
+            busy={busy || !sessionReady}
+            activeId={activeId}
+            paused={session.paused}
+            onStart={(id) => void startSession(id)}
+            onDone={(task) => void toggleDone(task)}
+            onAdd={addTasks}
+            onEdit={(task) => {
+              setEditingId(task.id);
+              setDrafts([editDraft(task)]);
+              setAssumptions([]);
+              setFormError("");
+              setNotice("");
+              setStep("review");
+            }}
+          />
+        )}
+      </main>
+      {import.meta.env.DEV && <DevControls />}
+      {!isDesktop() && <WebWidgetPreview />}
     </div>
   );
 }

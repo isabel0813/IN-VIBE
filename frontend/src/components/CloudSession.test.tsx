@@ -21,7 +21,7 @@ async function start(consent=true) {
   render(<CloudSession />);
   fireEvent.change(screen.getByLabelText("지금 공부할 일"), {target:{value:"전자기 유도 공부"}});
   if(consent) fireEvent.click(screen.getByRole("checkbox"));
-  fireEvent.click(screen.getByRole("button",{name:"집중 시작"}));
+  fireEvent.click(screen.getByRole("button",{name:"집중 시작하기"}));
   await waitFor(() => expect(mocks.show).toHaveBeenCalledWith(true));
 }
 it("starts one-line session, asks from actual observation, sends correction, and ends", async () => {

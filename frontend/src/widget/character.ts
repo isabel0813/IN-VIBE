@@ -9,6 +9,8 @@ export const characterArt: Record<CharacterState, string> = {
   recovery: "/characters/recovery.svg",
   complete: "/characters/complete.svg",
 };
+// 궁극기(하드 모드) 이미지. 언제 띄울지는 팀이 정한 뒤 연결한다.
+export const ultimateArt = "/characters/ultimate.png";
 export const characterCopy: Record<
   CharacterState,
   { label: string; line: string }

@@ -97,6 +97,8 @@ afterEach(() => vi.unstubAllGlobals());
 
 async function openInput() {
   render(<App />);
+  // 첫 화면은 한 줄 집중 홈이고, 할 일 정리는 링크로 들어간다.
+  fireEvent.click(await screen.findByRole("button", { name: "내 할 일 정리" }));
   await screen.findByLabelText("어떤 일을 해야 하나요?");
 }
 async function parseDraft() {
@@ -210,6 +212,7 @@ describe("Phase 1 user flows", () => {
   it("edits an existing task through PATCH and keeps completion unchanged after a failed PATCH", async () => {
     tasks = [{ ...draft, id: 1, done: false, done_at: null }];
     render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "자세한 계획" }));
     fireEvent.click(
       await screen.findByRole("button", { name: "발표 준비 수정" }),
     );
