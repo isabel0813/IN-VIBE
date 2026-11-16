@@ -116,3 +116,21 @@ export const api = {
   },
   settings: () => request<Settings>("/settings"),
 };
+
+/**
+ * 지표용 이벤트(POST /events, 204 응답)를 보낸다.
+ * 실패해도 화면 동작에는 영향이 없도록 결과를 기다리지 않고 오류도 무시한다.
+ * payload에 영상 제목·URL 같은 개인정보는 넣지 않는다.
+ */
+export function sendEvent(type: string, payload: Record<string, unknown> = {}): void {
+  try {
+    void fetch(`${baseUrl}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-User-Id": getUserId() },
+      body: JSON.stringify({ type, payload }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    // 이벤트 전송 실패는 무시한다.
+  }
+}

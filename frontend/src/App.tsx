@@ -16,7 +16,7 @@ import { isDesktop, onNavigate, showWidget } from "./desktop/bridge";
 import { WebWidgetPreview } from "./widget/Widget";
 import DevControls from "./widget/DevControls";
 import ActivityControls from "./activity/ActivityControls";
-import CloudSession from "./components/CloudSession";
+import CloudSession, { UltimateOverlay } from "./components/CloudSession";
 
 type Step = "home" | "input" | "review" | "plan";
 const INSTALL_URL = "/install.html";
@@ -648,6 +648,7 @@ export default function App() {
       </main>
       {import.meta.env.DEV && <DevControls />}
       {!isDesktop() && <WebWidgetPreview />}
+      <UltimateOverlay />
     </div>
   );
 }
