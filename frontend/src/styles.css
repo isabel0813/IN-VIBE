@@ -1343,7 +1343,8 @@ main {
   gap: 16px;
 }
 .menu-drawer[hidden],
-.menu-backdrop[hidden] {
+.menu-backdrop[hidden],
+.menu-section[hidden] {
   display: none;
 }
 .menu-head {
