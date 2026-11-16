@@ -163,7 +163,7 @@ export default function CloudSession({ onOpenTasks, onOpenPlan }: Props = {}) {
                 maxLength={100}
                 value={task}
                 onChange={e => setTask(e.target.value)}
-                placeholder="예: 물리학 10장 공부하기"
+                placeholder="예: 물리학 상대성이론 10장 공부하기"
                 disabled={busy}
               />
               <button type="submit" className="hero-send" aria-label="할 일 보내기" disabled={!canStart}>
