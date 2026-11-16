@@ -448,7 +448,8 @@ export default function App() {
           )}
         </section>
 
-        <section className="menu-section">
+        {/* 웹에서는 감지 설정이 비어 있으므로 Windows 앱에서만 보인다. */}
+        <section className="menu-section" hidden={!isDesktop()}>
           <h2>딴짓 감지 설정</h2>
           <ActivityControls />
         </section>
