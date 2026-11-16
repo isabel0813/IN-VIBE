@@ -1527,6 +1527,11 @@ main.page-main {
   font-size: 16px;
   font-weight: 600;
 }
+.hero-start:disabled {
+  background: #c9dce9;
+  color: #ffffff;
+  opacity: 1;
+}
 .hero-start:hover:not(:disabled) {
   background: #1f2b3e;
 }
