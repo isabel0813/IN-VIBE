@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createCloudMemory, removeLegacyCloudData } from "./cloudMemory";
 import type { MemoryPort, CloudState } from "./cloudMemory";
 const video = { title: "[합성] 전자기 유도 강의", video_id: "abcdefghijk" };
@@ -112,4 +112,20 @@ it("shares escalation in memory and removes raw question metadata after an answe
   main.reset(); await widget.refresh();
   expect(widget.read()).toBeNull(); expect(widget.dismissed()).toEqual([]);
   write.mockRestore();
+});
+
+describe("widget task change requests", () => {
+  it("relays a change from the widget to the main controller and reports failures", async () => {
+    const a: MemoryPort = { onmessage: null, postMessage: () => {} };
+    const b: MemoryPort = { onmessage: null, postMessage: () => {} };
+    a.postMessage = m => queueMicrotask(() => b.onmessage?.({ data: m } as never));
+    b.postMessage = m => queueMicrotask(() => a.onmessage?.({ data: m } as never));
+    const main = createCloudMemory(true, a);
+    const widget = createCloudMemory(false, b);
+    const handler = vi.fn(async (task: string) => task !== "실패");
+    main.handleChange(handler);
+    await widget.change("새 할 일");
+    expect(handler).toHaveBeenCalledWith("새 할 일");
+    await expect(widget.change("실패")).rejects.toThrow("할 일을 바꾸지 못했어요.");
+  });
 });

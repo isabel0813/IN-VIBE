@@ -225,7 +225,7 @@ export function useCloudController() {
     } finally { startLock.current = false; setBusy(false); }
   }
   // 진행 중인 세션을 새 할 일로 바꾼다. 서버는 새 세션을 열면서 이전 세션을 'replaced'로 끝낸다.
-  async function change(nextTask: string): Promise<boolean> {
+  async function change(nextTask: string, options: { stayInWidget?: boolean } = {}): Promise<boolean> {
     const current = read();
     const name = nextTask.trim();
     if (startLock.current || busy || !ready || !current || !name) return false;
@@ -246,7 +246,7 @@ export function useCloudController() {
       judgments.current.clear(); dismissed.current.clear(); clock.current.clear();
       write({ ...created, ask: null, reason: "" });
       setTask("");
-      await showWidget(true);
+      if (!options.stayInWidget) await showWidget(true);
       return true;
     } catch (e) {
       if (created && !read()) await api.endSession(created.id).catch(() => {});
@@ -254,6 +254,10 @@ export function useCloudController() {
       return false;
     } finally { startLock.current = false; setBusy(false); }
   }
+  // 위젯에서 보낸 "할 일 바꾸기"도 같은 change()로 처리한다 (메인 창은 열지 않는다).
+  const changeRef = useRef(change);
+  changeRef.current = change;
+  useEffect(() => cloudMemory.handleChange(next => changeRef.current(next, { stayInWidget: true })), []);
   async function end(id: number) {
     if (busy || read()?.id !== id) return;
     setBusy(true); setError("");

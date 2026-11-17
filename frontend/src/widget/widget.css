@@ -208,16 +208,54 @@ html.widget-page,
   overflow-wrap: anywhere;
   color: #1c2736;
 }
-.pet-actions {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 8px;
+.pet-change-form {
+  position: relative;
   margin-top: 12px;
 }
 .pet-bubble .pet-change {
-  padding: 12px;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 13px 48px 13px 14px;
+  border: 1px solid #c6daea;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #1c2736;
+  font: inherit;
   font-size: 15px;
+  outline: none;
+}
+.pet-bubble .pet-change::placeholder {
+  color: #8aa6c1;
   font-weight: 600;
+}
+.pet-bubble .pet-change:focus {
+  border-color: #8aa6c1;
+  box-shadow: 0 0 0 3px #c6eafe;
+}
+.pet-bubble .pet-change:disabled {
+  opacity: 0.55;
+}
+.pet-bubble .pet-change-send {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  transform: translateY(-50%);
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: #2b3a52;
+  color: #ffffff;
+}
+.pet-bubble .pet-change-send:hover:not(:disabled) {
+  background: #3b4e6c;
+}
+.pet-bubble .pet-change-send svg {
+  width: 16px;
+  height: 16px;
 }
 .pet-session-actions {
   display: flex;

@@ -15,6 +15,7 @@ import "./widget.css";
 import { activityApi, useActivity } from "../activity/bridge";
 import RecoveryFlow from "../activity/RecoveryFlow";
 import { CloudQuestion, useCloudSession } from "../components/CloudSession";
+import { cloudMemory } from "../components/cloudMemory";
 import Icon from "../components/Icon";
 import {
   BREAK_MAX,
@@ -51,6 +52,7 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
   // 일시정지 쉬는 시간 (분). 일시정지 버튼에 마우스를 올리면 고른다.
   const [breakMinutes, setBreakMinutes] = useState(10);
   const [breakPickerOpen, setBreakPickerOpen] = useState(false);
+  const [nextTask, setNextTask] = useState("");
   const breakRemaining = useBreakRemaining();
   const copy = characterCopy[cloud?.ask ? "suspect" : session.character];
   const preview = previewPlacement(
@@ -265,20 +267,33 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
               딴짓 시간은 측정하지 않았어. 계획에는 반영하지 않을게.
             </p>
           )}
-          <div className="pet-actions">
-            <button
+          <form
+            className="pet-change-form"
+            onSubmit={event => {
+              event.preventDefault();
+              const next = nextTask.trim();
+              if (!next || busy || !session.running) return;
+              void run(async () => {
+                await cloudMemory.change(next);
+                setNextTask("");
+              });
+            }}
+          >
+            <input
               className="pet-change"
+              aria-label="할 일 바꾸기"
+              placeholder="할 일 바꾸기"
+              maxLength={100}
+              value={nextTask}
               disabled={busy || !session.running}
-              onClick={() =>
-                void run(async () => {
-                  await showMain("input");
-                  await bubble(false);
-                })
-              }
-            >
-              할 일 바꾸기
-            </button>
-          </div>
+              onChange={event => setNextTask(event.target.value)}
+            />
+            {nextTask.trim() && (
+              <button type="submit" className="pet-change-send" aria-label="새 할 일 보내기" disabled={busy || !session.running}>
+                <Icon name="arrow" />
+              </button>
+            )}
+          </form>
           <div className="pet-pause-zone" onMouseLeave={() => setBreakPickerOpen(false)}>
             {breakPickerOpen && session.running && !session.paused && (
               <div className="pet-break-picker" role="group" aria-label="쉬는 시간 고르기">

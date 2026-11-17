@@ -55,17 +55,24 @@ describe("Annyong widget preview behavior", () => {
     expect(stage.style.left).not.toBe(previousLeft);
     expect(screen.queryByRole("dialog")).toBeNull();
   });
-  it("asks the main window for a new task without ending the session", async () => {
+  it("changes the task from the widget input without opening the main window", async () => {
     await sessionStore.send({ type: "start", task: { id: 3, name: "이어 할 일" } });
     const navigate = vi.fn();
     window.addEventListener("main-navigate", navigate);
+    const handler = vi.fn(async () => true);
+    const stop = cloudMemory.handleChange(handler);
     render(<Widget native={false} />); clickPet();
     expect(screen.queryByRole("button", { name: "최소화" })).toBeNull();
     expect(screen.queryByRole("button", { name: "숨김" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "할 일 바꾸기" }));
-    await waitFor(() => expect(navigate).toHaveBeenCalled());
-    expect((navigate.mock.calls[0][0] as CustomEvent).detail).toBe("input");
-    expect(sessionStore.getSnapshot().session.running).toBe(true);
+    const input = screen.getByRole("textbox", { name: "할 일 바꾸기" }) as HTMLInputElement;
+    expect(input.placeholder).toBe("할 일 바꾸기");
+    expect(screen.queryByRole("button", { name: "새 할 일 보내기" })).toBeNull();
+    fireEvent.change(input, { target: { value: "  자기장 공부  " } });
+    fireEvent.click(screen.getByRole("button", { name: "새 할 일 보내기" }));
+    await waitFor(() => expect(handler).toHaveBeenCalledWith("자기장 공부"));
+    await waitFor(() => expect(input.value).toBe(""));
+    expect(navigate).not.toHaveBeenCalled();
+    stop();
     window.removeEventListener("main-navigate", navigate);
   });
   it("pauses, resumes, navigates and ends the same session", async () => {

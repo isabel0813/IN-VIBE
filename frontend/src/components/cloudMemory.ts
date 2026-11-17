@@ -2,7 +2,8 @@ export type Video = { title: string; video_id: string };
 import type { InterventionStage } from "./intervention";
 export type CloudState = { id: number; task: string; ask: Video | null; reason: string; stage?: InterventionStage };
 type Snapshot = { value: CloudState | null; dismissed: string[] };
-type Message = { type: "reset" | "state" | "read" | "dismiss"; owner?: string; revision?: number; request?: string; snapshot?: Snapshot; session?: number; video?: string };
+type Message = { type: "reset" | "state" | "read" | "dismiss" | "change" | "changed"; owner?: string; revision?: number; request?: string; snapshot?: Snapshot; session?: number; video?: string; task?: string; error?: string };
+type ChangeHandler = (task: string) => Promise<boolean>;
 export interface MemoryPort {
   postMessage(message: Message): void;
   onmessage: ((event: MessageEvent<Message>) => unknown) | null;
@@ -17,6 +18,23 @@ export function createCloudMemory(owner: boolean, port?: MemoryPort) {
   let snapshot: Snapshot = { value: null, dismissed: [] };
   const listeners = new Set<() => void>();
   const pending = new Map<string, { resolve: () => void; timer: ReturnType<typeof setTimeout> }>();
+  // 위젯의 "할 일 바꾸기" 입력은 메인 화면의 컨트롤러가 처리한다.
+  let changeHandler: ChangeHandler | null = null;
+  const changes = new Map<string, { resolve: () => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+  async function runChange(task: string) {
+    if (!changeHandler) throw new Error("메인 화면이 준비되지 않았어요.");
+    if (!(await changeHandler(task))) throw new Error("할 일을 바꾸지 못했어요.");
+  }
+  function requestChange(task: string) {
+    if (owner) return runChange(task);
+    if (!port) return Promise.reject(new Error("메모리 동기화를 사용할 수 없어요. 메인 화면에서 확인해 주세요."));
+    return new Promise<void>((resolve, reject) => {
+      const id = crypto.randomUUID();
+      const timer = setTimeout(() => { changes.delete(id); reject(new Error("메인 화면과 연결하지 못했어요.")); }, 15000);
+      changes.set(id, { resolve, reject, timer });
+      port.postMessage({ type: "change", request: id, task });
+    });
+  }
   const publish = () => listeners.forEach(callback => callback());
   function sendState(request?: string, reset = false) {
     port?.postMessage({ type: reset ? "reset" : "state", owner: identity, revision, snapshot, request });
@@ -53,8 +71,22 @@ export function createCloudMemory(owner: boolean, port?: MemoryPort) {
   if (port) port.onmessage = ({ data }) => {
     if (!data || typeof data !== "object") return;
     if (owner) {
+      if (data.type === "change" && typeof data.task === "string" && data.request) {
+        const request = data.request;
+        void runChange(data.task).then(
+          () => port?.postMessage({ type: "changed", request }),
+          (e: unknown) => port?.postMessage({ type: "changed", request, error: e instanceof Error ? e.message : String(e) }));
+        return;
+      }
       if (data.type === "dismiss" && typeof data.session === "number" && typeof data.video === "string") dismiss(data.session, data.video);
       if (data.type === "read" || data.type === "dismiss") sendState(data.request);
+      return;
+    }
+    if (data.type === "changed" && data.request) {
+      const waiting = changes.get(data.request);
+      if (!waiting) return;
+      clearTimeout(waiting.timer); changes.delete(data.request);
+      if (data.error) waiting.reject(new Error(data.error)); else waiting.resolve();
       return;
     }
     if ((data.type !== "state" && data.type !== "reset") || !data.snapshot || !data.owner || data.revision === undefined) return;
@@ -74,6 +106,13 @@ export function createCloudMemory(owner: boolean, port?: MemoryPort) {
     set,
     dismiss: (session: number, video: string) => request("dismiss", session, video),
     refresh: () => request("read"),
+    change: requestChange,
+    /** 메인 화면 컨트롤러만 등록한다. 해제 함수를 돌려준다. */
+    handleChange(handler: ChangeHandler) {
+      if (!owner) return () => {};
+      changeHandler = handler;
+      return () => { if (changeHandler === handler) changeHandler = null; };
+    },
     subscribe(callback: () => void) { listeners.add(callback); return () => { listeners.delete(callback); }; },
     reset() {
       if (!owner) return;
