@@ -98,11 +98,9 @@ export default function App() {
             {session.running ? <button className="hero-start" type="button" disabled={busy || !ready} onClick={() => void returnToWidget()}>{isDesktop() ? "위젯으로 돌아가기" : "위젯 미리보기"}<Icon name="arrow" /></button>
               : <button className="hero-start" disabled={busy || !ready || !!value || !task.trim()}>{busy ? <><span className="spinner" />시작하는 중…</> : <><Icon name="play" />집중 시작</>}</button>}
           </form>
-          <div className="hero-links">
-            <button className="link" onClick={() => navigate("settings")}>감지·AI 설정</button>
-            {(session.running || value) && <button className="link" disabled={busy || !ready} onClick={() => void end()}>세션 종료</button>}
-          </div>
-          <p className="hero-note">감지와 AI 판단은 별도 동의 후에만 켜져요. 동의 없이도 집중을 시작할 수 있어요.</p>
+          {(session.running || value) && <div className="hero-links">
+            <button className="link" disabled={busy || !ready} onClick={() => void end()}>세션 종료</button>
+          </div>}
           {!isDesktop() && <p className="hero-note">웹 미리보기 · 독립 위젯과 YouTube 관측은 Windows 앱에서 사용할 수 있어요.</p>}
           <CloudQuestion />
         </section>
