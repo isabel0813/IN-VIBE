@@ -13,7 +13,7 @@ cd backend
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-python -m pytest -q                # 테스트 31개 통과 확인
+python -m pytest -q                # 기존 API·보관 정책 회귀 테스트
 uvicorn app.main:app --reload      # http://127.0.0.1:8000/docs 에서 바로 호출해 볼 수 있다
 ```
 
@@ -42,6 +42,9 @@ uvicorn app.main:app --reload
 - `OLLAMA_URL`, `OLLAMA_MODEL`, `OLLAMA_TIMEOUT`: `LLM_PROVIDER=ollama`일 때만 사용 (기본 `http://localhost:11434`, `qwen2.5:7b`, 120초)
 - `JUDGE_MAX_PER_SESSION`: 세션 하나에서 AI 판단을 부를 수 있는 최대 횟수 (기본 120, 넘으면 429)
 - `METRICS_TOKEN`: 지표 API(`/metrics`) 비밀번호. 비워두면 지표 API는 닫힌다. 팀만 알고, 프론트에 넣지 않는다
+- `RETENTION_MODE`: 기본 `preview`는 30일 경과 기록의 읽기 전용 집계. 운영 삭제 승인 후 `apply`로 설정하면 시작 직후 및 60초 간격으로 정리한다. `off`는 점검용 중지.
+
+30일 보관 범위, 기존 데이터 미리보기·승인·적용, 사용자별 삭제와 백업 처리는 [삭제 운영 절차](docs/retention.md)를 따른다. 기존 운영 데이터와 백업에 삭제를 적용하려면 먼저 대상·건수를 확인하고 승인을 받아야 한다.
 
 ## 프론트 연동 규칙
 

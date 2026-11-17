@@ -57,6 +57,11 @@ CREATE TABLE IF NOT EXISTS video_judgments (
 CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);
+CREATE TRIGGER IF NOT EXISTS sessions_delete_judgments
+AFTER DELETE ON sessions
+BEGIN
+    DELETE FROM video_judgments WHERE session_id = OLD.id;
+END;
 """
 
 
@@ -287,18 +292,19 @@ def get_judgment(conn, session_id: int, key: str) -> dict | None:
 
 
 def save_judgment(conn, session_id: int, key: str, category: str, source: str,
-                  reason: str = "", count_ai_call: bool = False) -> None:
+                  reason: str = "", count_ai_call: bool = False) -> bool:
     """category: study | background | other | user_ok(사용자 정정)"""
-    conn.execute(
+    cur = conn.execute(
         "INSERT INTO video_judgments (session_id, video_key, category, source, reason, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?) "
+        "SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM sessions WHERE id = ?) "
         "ON CONFLICT(session_id, video_key) DO UPDATE SET category = excluded.category, "
-        "source = excluded.source, reason = excluded.reason, created_at = excluded.created_at",
-        (session_id, key, category, source, reason, now_kst().isoformat()),
+        "source = excluded.source, reason = excluded.reason",
+        (session_id, key, category, source, reason, now_kst().isoformat(), session_id),
     )
-    if count_ai_call:
+    if count_ai_call and cur.rowcount:
         conn.execute("UPDATE sessions SET ai_calls = ai_calls + 1 WHERE id = ?", (session_id,))
     conn.commit()
+    return cur.rowcount > 0
 
 
 def planner_tasks(conn, user_id: str) -> list[planner.Task]:

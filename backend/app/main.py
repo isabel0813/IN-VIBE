@@ -1,11 +1,13 @@
 """뭐보뇽 백엔드 API."""
 from __future__ import annotations
 
+import asyncio
 import csv
 import hmac
 import io
 import json
 import os
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Iterator
 
@@ -13,11 +15,32 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 
-from . import db, judge, metrics, nlp, planner
+from . import db, judge, metrics, nlp, planner, retention
 from .schemas import (EventIn, JudgeFeedbackIn, JudgeIn, ParseIn, SessionEnd, SessionIn,
                       SettingsIn, TaskBatchCreate, TaskCreate, TaskUpdate, WastedIn)
 
-app = FastAPI(title="뭐보뇽 API", version="0.4.0")
+
+@asynccontextmanager
+async def lifespan(app):
+    mode = os.getenv("RETENTION_MODE", "preview")
+    if mode not in {"off", "preview", "apply"}:
+        raise ValueError("RETENTION_MODE must be off, preview or apply")
+    if mode == "off":
+        yield
+        return
+    path = db.DB_PATH
+    stop = asyncio.Event()
+    # Catch up before accepting requests, including after a restart or downtime.
+    await retention.run_logged(path, mode)
+    task = asyncio.create_task(retention.worker(path, mode, stop))
+    try:
+        yield
+    finally:
+        stop.set()
+        await task
+
+
+app = FastAPI(title="뭐보뇽 API", version="0.4.0", lifespan=lifespan)
 
 origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["*"], allow_headers=["*"])
@@ -200,8 +223,9 @@ def judge_video(body: JudgeIn, user: str = Depends(get_user), conn=Depends(get_c
     except nlp.ParseError as e:
         db.log_event(conn, user, "judge_failed", None, {"session_id": s["id"]})
         raise HTTPException(502, str(e))
-    db.save_judgment(conn, s["id"], key, result["category"], "ai", result["reason"],
-                     count_ai_call=True)
+    if not db.save_judgment(conn, s["id"], key, result["category"], "ai", result["reason"],
+                            count_ai_call=True):
+        raise HTTPException(404, "삭제된 세션에는 판단을 저장할 수 없어요")
     db.log_event(conn, user, "judge_requested", None,
                  {"session_id": s["id"], "source": "ai", "category": result["category"]})
     return {**result, "source": "ai", "cached": False}
@@ -213,7 +237,8 @@ def judge_feedback(body: JudgeFeedbackIn, user: str = Depends(get_user), conn=De
     s = _active_session(conn, user, body.session_id)
     key = judge.video_key(body.video_id, body.title)
     before = db.get_judgment(conn, s["id"], key)
-    db.save_judgment(conn, s["id"], key, "user_ok", "user", "사용자가 정정함")
+    if not db.save_judgment(conn, s["id"], key, "user_ok", "user", "사용자가 정정함"):
+        raise HTTPException(404, "삭제된 세션에는 정정을 저장할 수 없어요")
     db.log_event(conn, user, "judge_corrected", None,
                  {"session_id": s["id"],
                   "previous": before["category"] if before else None,
