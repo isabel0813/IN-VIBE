@@ -224,6 +224,36 @@ export function useCloudController() {
       setError(String(e));
     } finally { startLock.current = false; setBusy(false); }
   }
+  // 진행 중인 세션을 새 할 일로 바꾼다. 서버는 새 세션을 열면서 이전 세션을 'replaced'로 끝낸다.
+  async function change(nextTask: string): Promise<boolean> {
+    const current = read();
+    const name = nextTask.trim();
+    if (startLock.current || busy || !ready || !current || !name) return false;
+    if (name.length > 100 || /[\r\n]/.test(name)) {
+      setError("지금 집중할 일을 100자 이내의 한 줄로 입력해 주세요.");
+      return false;
+    }
+    if (name === current.task) return true;
+    startLock.current = true;
+    setBusy(true); setError("");
+    // 이전 할 일 기준의 영상 판단은 바로 멈춘다.
+    write(null);
+    let created: { id: number; task: string } | null = null;
+    try {
+      await sessionStore.send({ type: "end" });
+      created = await api.startSession(name);
+      await sessionStore.send({ type: "start", task: { id: TASK_OFFSET + created.id, name: created.task } });
+      judgments.current.clear(); dismissed.current.clear(); clock.current.clear();
+      write({ ...created, ask: null, reason: "" });
+      setTask("");
+      await showWidget(true);
+      return true;
+    } catch (e) {
+      if (created && !read()) await api.endSession(created.id).catch(() => {});
+      setError(`할 일을 바꾸지 못했어요. ${String(e)}`);
+      return false;
+    } finally { startLock.current = false; setBusy(false); }
+  }
   async function end(id: number) {
     if (busy || read()?.id !== id) return;
     setBusy(true); setError("");
@@ -236,7 +266,7 @@ export function useCloudController() {
     catch (e) { failures.push(`서버 세션 종료를 확인하지 못했어요. ${String(e)}`); }
     setError(failures.join(" ")); setBusy(false);
   }
-  return { value, session, ready, task, setTask, consent, setConsent, busy, error, start, end };
+  return { value, session, ready, task, setTask, consent, setConsent, busy, error, start, change, end };
 }
 
 // Retained as a small standalone view for existing integrations/tests. App uses

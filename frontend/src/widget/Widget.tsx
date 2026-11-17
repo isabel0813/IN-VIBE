@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent } from "react";
 import {
   closedLayout,
-  concealWidget,
   isDesktop,
   nativeWidget,
   showMain,
@@ -16,6 +15,7 @@ import "./widget.css";
 import { activityApi, useActivity } from "../activity/bridge";
 import RecoveryFlow from "../activity/RecoveryFlow";
 import { CloudQuestion, useCloudSession } from "../components/CloudSession";
+import Icon from "../components/Icon";
 
 export default function Widget({ native = isDesktop() }: { native?: boolean }) {
   const { session, ready, error: syncError } = useFocusSession();
@@ -215,11 +215,6 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
               ×
             </button>
           </div>
-          <p className="pet-line">
-            {session.paused && !session.simulated
-              ? "잠깐 쉬어라. 돌아오면 다시 가자."
-              : copy.line}
-          </p>
           <p className="pet-current-task">
             <span>현재 작업</span>
             <strong>{session.task?.name ?? "아직 고른 일이 없네."}</strong>
@@ -260,18 +255,8 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
           )}
           <div className="pet-actions">
             <button
-              disabled={busy}
-              onClick={() =>
-                void run(async () => {
-                  await showMain("plan");
-                  await bubble(false);
-                })
-              }
-            >
-              집중 화면 보기 ↗
-            </button>
-            <button
-              disabled={busy}
+              className="pet-change"
+              disabled={busy || !session.running}
               onClick={() =>
                 void run(async () => {
                   await showMain("input");
@@ -279,7 +264,7 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
                 })
               }
             >
-              할 일 입력하기 ＋
+              할 일 바꾸기
             </button>
           </div>
           <div className="pet-session-actions">
@@ -315,21 +300,20 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
               </button>
             </p>
           )}
-          <div className="pet-window-actions">
-            <span>
-              {native ? "조용히 곁에 있을게." : "웹 미리보기 · OS 창 제어 없음"}
-            </span>
+          <div className="pet-footer">
             <button
+              className="pet-open-main"
+              aria-label="집중 화면 열기"
+              title="집중 화면 열기"
               disabled={busy}
-              onClick={() => void run(() => concealWidget(true))}
+              onClick={() =>
+                void run(async () => {
+                  await showMain("plan");
+                  await bubble(false);
+                })
+              }
             >
-              최소화
-            </button>
-            <button
-              disabled={busy}
-              onClick={() => void run(() => concealWidget(false))}
-            >
-              숨김
+              <Icon name="window" />
             </button>
           </div>
         </div>

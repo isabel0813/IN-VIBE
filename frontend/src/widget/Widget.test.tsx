@@ -55,19 +55,18 @@ describe("Annyong widget preview behavior", () => {
     expect(stage.style.left).not.toBe(previousLeft);
     expect(screen.queryByRole("dialog")).toBeNull();
   });
-  it.each(["최소화", "숨김"])("%s returns to the main view and keeps the session intact", async label => {
+  it("asks the main window for a new task without ending the session", async () => {
     await sessionStore.send({ type: "start", task: { id: 3, name: "이어 할 일" } });
-    const navigate = vi.fn(), visibility = vi.fn();
+    const navigate = vi.fn();
     window.addEventListener("main-navigate", navigate);
-    window.addEventListener("web-widget-visible", visibility);
     render(<Widget native={false} />); clickPet();
-    fireEvent.click(screen.getByRole("button", { name: label }));
-    await waitFor(() => expect(visibility).toHaveBeenCalled());
-    expect((navigate.mock.calls[0][0] as CustomEvent).detail).toBe("plan");
-    expect((visibility.mock.calls[0][0] as CustomEvent).detail).toBe(false);
+    expect(screen.queryByRole("button", { name: "최소화" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "숨김" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "할 일 바꾸기" }));
+    await waitFor(() => expect(navigate).toHaveBeenCalled());
+    expect((navigate.mock.calls[0][0] as CustomEvent).detail).toBe("input");
     expect(sessionStore.getSnapshot().session.running).toBe(true);
     window.removeEventListener("main-navigate", navigate);
-    window.removeEventListener("web-widget-visible", visibility);
   });
   it("pauses, resumes, navigates and ends the same session", async () => {
     await sessionStore.send({
@@ -91,7 +90,7 @@ describe("Annyong widget preview behavior", () => {
     await waitFor(() =>
       expect(sessionStore.getSnapshot().session.paused).toBe(false),
     );
-    const plan = screen.getByRole("button", { name: /집중 화면 보기/ });
+    const plan = screen.getByRole("button", { name: "집중 화면 열기" });
     await waitFor(() =>
       expect((plan as HTMLButtonElement).disabled).toBe(false),
     );
@@ -112,7 +111,9 @@ describe("Annyong widget preview behavior", () => {
       await act(() => sessionStore.send({ type: "character", character }));
       expect(screen.queryByRole("dialog")).toBeNull();
       clickPet();
-      expect(screen.getByText(characterCopy[character].line)).toBeTruthy();
+      // 말풍선에는 상태 이름만 보이고, 캐릭터 대사는 보이지 않는다.
+      expect(screen.getByText(characterCopy[character].label)).toBeTruthy();
+      expect(screen.queryByText(characterCopy[character].line)).toBeNull();
       expect(
         screen.getByText(/개발 시뮬레이션 · 실제 활동 감지 없음/),
       ).toBeTruthy();

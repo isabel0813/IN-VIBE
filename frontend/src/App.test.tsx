@@ -19,6 +19,14 @@ beforeEach(async () => {
   }));
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+function openSettings() {
+  fireEvent.click(screen.getByRole("button", { name: "메뉴 열기" }));
+  fireEvent.click(screen.getByRole("button", { name: "감지·AI 설정" }));
+}
+function backToFocus() {
+  fireEvent.click(screen.getByRole("button", { name: "메뉴 열기" }));
+  fireEvent.click(screen.getByRole("button", { name: "집중 화면" }));
+}
 function fill(task = "전자기 유도 공부") {
   fireEvent.change(screen.getByLabelText("지금 공부할 일"), { target: { value: task } });
 }
@@ -68,8 +76,8 @@ describe("C landing one-line focus flow", () => {
     render(<App />); fill();
     const form = screen.getByLabelText("지금 공부할 일").closest("form")!;
     fireEvent.submit(form); fireEvent.submit(form);
-    fireEvent.click(screen.getByRole("button", { name: "설정" }));
-    fireEvent.click(screen.getByRole("button", { name: "집중 화면으로" }));
+    openSettings();
+    backToFocus();
     fireEvent.submit(form);
     expect(fetch).toHaveBeenCalledTimes(1);
     await act(async () => finish(Response.json({ id: 17, task: "전자기 유도 공부" })));
@@ -114,13 +122,13 @@ describe("C landing one-line focus flow", () => {
   });
   it("keeps AI consent explicit and persistent only while the main controller is mounted", async () => {
     render(<App />); fill();
-    fireEvent.click(screen.getByRole("button", { name: "설정" }));
+    openSettings();
     const consent = screen.getByRole("checkbox", { name: /AI 판단에 동의합니다/ }) as HTMLInputElement;
     expect(consent.checked).toBe(false);
     fireEvent.click(consent);
-    fireEvent.click(screen.getByRole("button", { name: "집중 화면으로" }));
+    backToFocus();
     expect((screen.getByLabelText("지금 공부할 일") as HTMLInputElement).value).toBe("전자기 유도 공부");
-    fireEvent.click(screen.getByRole("button", { name: "설정" }));
+    openSettings();
     expect((screen.getByRole("checkbox", { name: /AI 판단에 동의합니다/ }) as HTMLInputElement).checked).toBe(true);
     expect(fetch).not.toHaveBeenCalled();
   });
@@ -131,6 +139,19 @@ describe("C landing one-line focus flow", () => {
     expect(requests[1].path).toBe("/sessions/17/end");
     expect(sessionStore.getSnapshot().session.running).toBe(false);
   });
+  it("changes the task of a running session from the main screen", async () => {
+    render(<App />); await start();
+    fireEvent.click(screen.getByRole("button", { name: "할 일 바꾸기" }));
+    const input = screen.getByLabelText("지금 공부할 일") as HTMLInputElement;
+    await waitFor(() => expect(input.disabled).toBe(false));
+    expect(input.value).toBe("전자기 유도 공부");
+    fireEvent.change(input, { target: { value: "자기장 공부" } });
+    fireEvent.click(screen.getByRole("button", { name: "할 일 바꾸기" }));
+    await waitFor(() => expect(requests.filter(r => r.path === "/sessions")).toHaveLength(2));
+    expect(requests.filter(r => r.path === "/sessions")[1].body).toEqual({ task: "자기장 공부" });
+    await waitFor(() => expect(sessionStore.getSnapshot().session.task?.name).toBe("자기장 공부"));
+    expect(sessionStore.getSnapshot().session.running).toBe(true);
+  });
   it("does not resume a stored cloud session on relaunch", () => {
     localStorage.setItem("mobonyong.cloud-session", JSON.stringify({ id: 17, task: "이전 작업", ask: null, reason: "" }));
     render(<App />);
@@ -140,7 +161,7 @@ describe("C landing one-line focus flow", () => {
   });
   it("loads preserved task data only after explicitly opening the legacy screen", async () => {
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: "설정" }));
+    openSettings();
     expect(fetch).not.toHaveBeenCalled();
     fireEvent.click(screen.getByText("기존 작업 데이터"));
     vi.mocked(fetch).mockImplementation(async (url: string | URL | Request) => {

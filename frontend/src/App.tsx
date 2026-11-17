@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { CloudQuestion, UltimateOverlay, useCloudController } from "./components/CloudSession";
 import Icon from "./components/Icon";
 import ActivityControls from "./activity/ActivityControls";
@@ -13,6 +13,9 @@ type View = "focus" | "settings" | "legacy";
 export default function App() {
   const [view, setView] = useState<View>("focus");
   const [menuOpen, setMenuOpen] = useState(false);
+  // 위젯의 "할 일 바꾸기"로 들어오면 입력칸을 다시 열어 새 할 일을 받는다.
+  const [changing, setChanging] = useState(false);
+  const taskInput = useRef<HTMLInputElement>(null);
   const focus = useCloudController();
   const { error: syncError } = useFocusSession();
   const [windowError, setWindowError] = useState("");
@@ -22,7 +25,10 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     let dispose: (() => void) | undefined;
-    void onNavigate(() => { setView("focus"); setMenuOpen(false); }).then(stop => {
+    void onNavigate(target => {
+      setView("focus"); setMenuOpen(false);
+      if (target === "input") setChanging(true);
+    }).then(stop => {
       if (cancelled) stop(); else dispose = stop;
     }).catch(e => setWindowError(String(e)));
     return () => { cancelled = true; dispose?.(); };
@@ -33,7 +39,17 @@ export default function App() {
     window.addEventListener("keydown", close);
     return () => window.removeEventListener("keydown", close);
   }, [menuOpen]);
+  useEffect(() => {
+    if (!session.running) { setChanging(false); return; }
+    if (!changing) return;
+    setTask(session.task?.name ?? "");
+    requestAnimationFrame(() => { taskInput.current?.focus(); taskInput.current?.select(); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [changing, session.running]);
   function navigate(next: View) { setView(next); setMenuOpen(false); }
+  async function changeTask() {
+    if (await focus.change(task)) setChanging(false);
+  }
   async function returnToWidget() {
     setWindowError("");
     try { await showWidget(true); } catch (e) { setWindowError(String(e)); }
@@ -55,9 +71,6 @@ export default function App() {
         </button>
         <div className="home-bar-actions">
           {session.running && <span className="home-bar-status"><span className="live-dot" />{session.paused ? "일시정지" : "집중 중"}</span>}
-          <button className="round-button settings-toggle" onClick={() => navigate(view === "focus" ? "settings" : "focus")}>
-            {view === "focus" ? "설정" : "집중 화면으로"}
-          </button>
           <button className="round-button" aria-label="메뉴 열기" aria-expanded={menuOpen} aria-controls="app-menu" onClick={() => setMenuOpen(true)}><Icon name="menu" /></button>
         </div>
       </header>
@@ -68,10 +81,6 @@ export default function App() {
           <button className={`menu-item ${view === "focus" ? "selected" : ""}`} onClick={() => navigate("focus")}><Icon name="play" />집중 화면</button>
           <button className={`menu-item ${view === "settings" ? "selected" : ""}`} onClick={() => navigate("settings")}><Icon name="menu" />감지·AI 설정</button>
         </nav>
-        <section className="menu-section">
-          <h2>안뇽이</h2><p className="menu-meta">{session.running ? session.task?.name : "집중할 일을 기다리고 있어요."}</p>
-          <div className="menu-buttons"><button disabled={busy || !ready} onClick={() => void returnToWidget()}>{isDesktop() ? "안뇽이 표시" : "위젯 미리보기"}</button></div>
-        </section>
         <section className="menu-section">
           <h2>설치</h2>
           <a href="/install.html" target="_blank" rel="noreferrer">Windows·Chrome 설치 안내</a>
@@ -88,17 +97,22 @@ export default function App() {
           <div className="hero-character"><img src={annyongArt} alt="안뇽이 캐릭터" /></div>
           <h1>{session.running ? "지금은 이거 하는 중이뇽" : "오늘은 뭘 해야 하뇽?"}</h1>
           <p className="hero-sub">{session.running ? "잠깐 돌아와도 괜찮아. 준비되면 이어서 하자." : "자세히 적을수록 안뇽이가 더 잘 알아볼 수 있어!"}</p>
-          <form className="hero-form" onSubmit={event => { event.preventDefault(); void focus.start(); }}>
+          <form className="hero-form" onSubmit={event => { event.preventDefault(); void (changing ? changeTask() : focus.start()); }}>
             <div className="hero-input">
-              <input id="focus-task" type="text" aria-label="지금 공부할 일" maxLength={100}
-                value={session.running ? session.task?.name ?? "" : task} disabled={busy || session.running || !!value}
+              <input ref={taskInput} id="focus-task" type="text" aria-label="지금 공부할 일" maxLength={100}
+                value={session.running && !changing ? session.task?.name ?? "" : task} disabled={busy || (session.running && !changing) || (!!value && !changing)}
                 onChange={event => setTask(event.target.value)} placeholder="예: 물리학2 패러데이 법칙 공부하기" />
-              {!session.running && <button type="submit" className="hero-send" aria-label="할 일 보내기" disabled={busy || !ready || !!value || !task.trim()}><Icon name="arrow" /></button>}
+              {(!session.running || changing) && <button type="submit" className="hero-send" aria-label="할 일 보내기" disabled={busy || !ready || !task.trim()}><Icon name="arrow" /></button>}
             </div>
-            {session.running ? <button className="hero-start" type="button" disabled={busy || !ready} onClick={() => void returnToWidget()}>{isDesktop() ? "위젯으로 돌아가기" : "위젯 미리보기"}<Icon name="arrow" /></button>
+            {changing && session.running ? <button className="hero-start" disabled={busy || !ready || !task.trim()}>{busy ? <><span className="spinner" />바꾸는 중…</> : <>할 일 바꾸기</>}</button>
+              : session.running ? <button className="hero-start" type="button" disabled={busy || !ready} onClick={() => void returnToWidget()}>{isDesktop() ? "위젯으로 돌아가기" : "위젯 미리보기"}<Icon name="arrow" /></button>
               : <button className="hero-start" disabled={busy || !ready || !!value || !task.trim()}>{busy ? <><span className="spinner" />시작하는 중…</> : <><Icon name="play" />집중 시작</>}</button>}
           </form>
           {(session.running || value) && <div className="hero-links">
+            {changing
+              ? <button className="link" disabled={busy} onClick={() => { setChanging(false); setTask(""); }}>취소</button>
+              : <button className="link" disabled={busy || !ready} onClick={() => setChanging(true)}>할 일 바꾸기</button>}
+            <span aria-hidden="true">·</span>
             <button className="link" disabled={busy || !ready} onClick={() => void end()}>세션 종료</button>
           </div>}
           {!isDesktop() && <p className="hero-note">웹 미리보기 · 독립 위젯과 YouTube 관측은 Windows 앱에서 사용할 수 있어요.</p>}
