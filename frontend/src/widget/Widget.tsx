@@ -423,15 +423,6 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
         <span className="pet-state-dot" aria-hidden="true" />
         {!layout.open && !session.paused && (cloud?.ask || (session.character === "suspect" && activity.incident)) && <span className="pet-nudge">{cloud?.stage === 2 ? "아직 보고 있뇽?" : "잠깐, 확인!"}</span>}
       </button>
-      {native && !layout.open && <div
-        className="pet-drag-handle"
-        title="안뇽이 이동 · 이 손잡이를 드래그하세요"
-        aria-label="안뇽이 이동 손잡이"
-        style={{ left: geometry.petX + 28, top: geometry.petY + 70 }}
-        onPointerDown={(event) => {
-          if (event.button === 0) void run(() => nativeWidget.drag());
-        }}
-      >···</div>}
       {!layout.open && (error || syncError) && (
         <button
           className="pet-retry"
