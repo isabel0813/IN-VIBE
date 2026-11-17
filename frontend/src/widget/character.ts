@@ -1,16 +1,18 @@
 import type { CharacterState } from "../session/model";
 
-// Replace these files (or URLs) to use the officially licensed character later.
+// 안뇽이 원본 일러스트 (배경 투명). 홈 화면과 위젯이 같은 그림을 쓴다.
+const annyong = "/characters/annyong.png";
+// 상태마다 같은 그림을 쓰고, 위젯에서는 움직임(widget.css)으로 상태를 구분한다.
+// 표정별 그림이 생기면 여기만 바꾸면 된다.
 export const characterArt: Record<CharacterState, string> = {
-  idle: "/characters/idle.svg",
-  focus: "/characters/focus.svg",
-  suspect: "/characters/suspect.svg",
-  checkin: "/characters/checkin.svg",
-  recovery: "/characters/recovery.svg",
-  complete: "/characters/complete.svg",
+  idle: annyong,
+  focus: annyong,
+  suspect: annyong,
+  checkin: annyong,
+  recovery: annyong,
+  complete: annyong,
 };
-// 안뇽이 원본 일러스트 (배경 투명). 홈 화면에서 쓴다.
-export const annyongArt = "/characters/annyong.png";
+export const annyongArt = annyong;
 // Confirmed 10-minute intervention image.
 export const ultimateArt = "/characters/ultimate.png";
 export const characterCopy: Record<

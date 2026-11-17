@@ -61,7 +61,43 @@ html.widget-page,
   display: block;
   width: 80px;
   height: 80px;
+  object-fit: contain;
   pointer-events: none;
+  /* 어떤 바탕화면 위에서도 보이도록 옅은 그림자 */
+  filter: drop-shadow(0 2px 3px rgba(28, 39, 54, 0.28));
+  transform-origin: 50% 90%;
+}
+/* 상태별 움직임: 같은 그림이라 움직임으로 구분한다 */
+.state-focus img {
+  animation: pet-bob 3.2s ease-in-out infinite;
+}
+.state-suspect img,
+.state-checkin img {
+  animation: pet-wiggle 1.4s ease-in-out infinite;
+}
+.state-recovery img {
+  animation: pet-bob 1.6s ease-in-out infinite;
+}
+.state-complete img {
+  animation: pet-hop 0.9s ease-out 3;
+}
+@keyframes pet-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+@keyframes pet-wiggle {
+  0%, 60%, 100% { transform: rotate(0deg); }
+  10%, 30%, 50% { transform: rotate(-6deg); }
+  20%, 40% { transform: rotate(6deg); }
+}
+@keyframes pet-hop {
+  0%, 100% { transform: translateY(0) scale(1); }
+  40% { transform: translateY(-8px) scale(1.04); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pet-character img {
+    animation: none !important;
+  }
 }
 .pet-character:focus-visible {
   outline: 1px dashed #b8d6ff;
