@@ -108,11 +108,11 @@ describe("C landing one-line focus flow", () => {
     render(<App />); await start();
     fireEvent.click(screen.getByRole("button", { name: /^안뇽이:/ }));
     expect(within(screen.getByRole("dialog", { name: "안뇽이 말풍선" })).getByText("전자기 유도 공부")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "집중 세션 일시정지" }));
+    fireEvent.click(screen.getByRole("button", { name: "일시정지" }));
     await waitFor(() => expect(sessionStore.getSnapshot().session.paused).toBe(true));
-    fireEvent.click(screen.getByRole("button", { name: "집중 세션 재개" }));
+    fireEvent.click(screen.getByRole("button", { name: "재개" }));
     await waitFor(() => expect(sessionStore.getSnapshot().session.paused).toBe(false));
-    const end = screen.getByRole("button", { name: "집중 세션 종료" });
+    const end = screen.getByRole("button", { name: "종료" });
     await waitFor(() => expect((end as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(end);
     await waitFor(() => expect(requests.filter(r => r.path === "/sessions/17/end")).toHaveLength(1));

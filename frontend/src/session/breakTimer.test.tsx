@@ -34,7 +34,7 @@ it("shows the 5-minute step slider on hover and pauses for the chosen time", asy
   await sessionStore.send({ type: "start", task: { id: 7, name: "슬라이더" } });
   render(<Widget native={false} />);
   fireEvent.click(screen.getByRole("button", { name: /^안뇽이:/ }));
-  const pause = screen.getByRole("button", { name: "집중 세션 일시정지" });
+  const pause = screen.getByRole("button", { name: "일시정지" });
   fireEvent.mouseEnter(pause);
   const slider = screen.getByRole("slider", { name: "쉬는 시간(분)" }) as HTMLInputElement;
   expect([slider.min, slider.max, slider.step]).toEqual(["5", "60", "5"]);

@@ -78,9 +78,9 @@ describe("Annyong widget preview behavior", () => {
     render(<Widget native={false} />);
     clickPet();
     expect(screen.getByText("진짜 선택된 과제")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "집중 세션 일시정지" }));
+    fireEvent.click(screen.getByRole("button", { name: "일시정지" }));
     const resume = await screen.findByRole("button", {
-      name: "집중 세션 재개",
+      name: "재개",
     });
     await waitFor(() =>
       expect((resume as HTMLButtonElement).disabled).toBe(false),
@@ -98,7 +98,7 @@ describe("Annyong widget preview behavior", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect((navigate.mock.calls[0][0] as CustomEvent).detail).toBe("plan");
     clickPet();
-    fireEvent.click(screen.getByRole("button", { name: "집중 세션 종료" }));
+    fireEvent.click(screen.getByRole("button", { name: "종료" }));
     await waitFor(() =>
       expect(sessionStore.getSnapshot().session.running).toBe(false),
     );

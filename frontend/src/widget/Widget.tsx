@@ -327,7 +327,7 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
                   })
                 }
               >
-                {session.paused ? "집중 세션 재개" : "집중 세션 일시정지"}
+                {session.paused ? "재개" : "일시정지"}
               </button>
               <button
                 disabled={busy || !session.running}
@@ -340,7 +340,7 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
                   })
                 }
               >
-                집중 세션 종료
+                종료
               </button>
             </div>
           </div>
