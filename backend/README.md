@@ -101,7 +101,7 @@ uvicorn app.main:app --reload
 **프론트는 `action`만 보면 된다.**
 
 - `action: "ignore"` → 냅둔다
-  - `category: "study"`: 할 일과 관련된 영상
+  - `category: "study"`: 할 일에 적힌 **단원·주제와 같은** 영상. 같은 과목이어도 다른 단원이면 `other`(물어봄). 할 일에 과목만 적었으면 그 과목 영상은 `study`
   - `category: "background"`: 확실한 배경음악·플레이리스트·백색소음·Study With Me 등
   - `category: "user_ok"`: 사용자가 "아니? 전혀~"로 정정한 영상
 - `action: "ask"` → **"너 혹시 딴짓해?"** 를 띄운다
