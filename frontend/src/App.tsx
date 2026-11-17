@@ -4,6 +4,7 @@ import Icon from "./components/Icon";
 import ActivityControls from "./activity/ActivityControls";
 import { isDesktop, onNavigate, showWidget } from "./desktop/bridge";
 import { sessionStore, useFocusSession } from "./session/store";
+import { setBreakUntil, useAutoResume } from "./session/breakTimer";
 import { annyongArt } from "./widget/character";
 import { WebWidgetPreview } from "./widget/Widget";
 
@@ -21,6 +22,8 @@ export default function App() {
   const [windowError, setWindowError] = useState("");
   const { session, value, task, setTask, ready, busy, error } = focus;
   const ultimate = value?.stage === 3 && !!value.ask;
+  // 위젯에서 정한 쉬는 시간이 끝나면 메인 창이 세션을 다시 시작한다.
+  useAutoResume();
 
   useEffect(() => {
     let cancelled = false;
@@ -55,6 +58,7 @@ export default function App() {
     try { await showWidget(true); } catch (e) { setWindowError(String(e)); }
   }
   async function end() {
+    setBreakUntil(null);
     if (value) await focus.end(value.id);
     else {
       try { await sessionStore.send({ type: "end" }); }

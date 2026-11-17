@@ -16,6 +16,14 @@ import { activityApi, useActivity } from "../activity/bridge";
 import RecoveryFlow from "../activity/RecoveryFlow";
 import { CloudQuestion, useCloudSession } from "../components/CloudSession";
 import Icon from "../components/Icon";
+import {
+  BREAK_MAX,
+  BREAK_MIN,
+  BREAK_STEP,
+  formatRemaining,
+  setBreakUntil,
+  useBreakRemaining,
+} from "../session/breakTimer";
 
 export default function Widget({ native = isDesktop() }: { native?: boolean }) {
   const { session, ready, error: syncError } = useFocusSession();
@@ -40,6 +48,10 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
     moved: boolean;
   } | null>(null);
   const moved = useRef(false);
+  // 일시정지 쉬는 시간 (분). 일시정지 버튼에 마우스를 올리면 고른다.
+  const [breakMinutes, setBreakMinutes] = useState(10);
+  const [breakPickerOpen, setBreakPickerOpen] = useState(false);
+  const breakRemaining = useBreakRemaining();
   const copy = characterCopy[cloud?.ask ? "suspect" : session.character];
   const preview = previewPlacement(
     position.x,
@@ -267,30 +279,70 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
               할 일 바꾸기
             </button>
           </div>
-          <div className="pet-session-actions">
-            {activity.consent && <button disabled={busy} onClick={() => void run(async () => {
-              await activityApi.configure({ consent: false, thresholdSeconds: activity.thresholdSeconds, relatedTerms: activity.relatedTerms, suspectTerms: activity.suspectTerms });
-            })}>활동 감지 중지</button>}
-            <button
-              disabled={busy || !session.running}
-              onClick={() =>
-                send({ type: session.paused ? "resume" : "pause" })
-              }
-            >
-              {session.paused ? "집중 세션 재개" : "집중 세션 일시정지"}
-            </button>
-            <button
-              disabled={busy || !session.running}
-              onClick={() =>
-                void run(async () => {
-                  await sessionStore.send({ type: "end" });
-                  await showMain("plan");
-                  await bubble(false);
-                })
-              }
-            >
-              집중 세션 종료
-            </button>
+          <div className="pet-pause-zone" onMouseLeave={() => setBreakPickerOpen(false)}>
+            {breakPickerOpen && session.running && !session.paused && (
+              <div className="pet-break-picker" role="group" aria-label="쉬는 시간 고르기">
+                <strong>{breakMinutes >= 60 ? "1시간" : `${breakMinutes}분`} 쉬기</strong>
+                <span>끝나면 자동으로 다시 시작해</span>
+                <div className="pet-break-slider">
+                  <div className="pet-break-dots" aria-hidden="true">
+                    {Array.from({ length: (BREAK_MAX - BREAK_MIN) / BREAK_STEP + 1 }, (_, i) => <i key={i} />)}
+                  </div>
+                  <input
+                    type="range"
+                    aria-label="쉬는 시간(분)"
+                    min={BREAK_MIN}
+                    max={BREAK_MAX}
+                    step={BREAK_STEP}
+                    value={breakMinutes}
+                    style={{ "--fill": `${((breakMinutes - BREAK_MIN) / (BREAK_MAX - BREAK_MIN)) * 100}%` } as CSSProperties}
+                    onChange={(event) => setBreakMinutes(Number(event.target.value))}
+                  />
+                </div>
+              </div>
+            )}
+            {session.paused && breakRemaining !== null && (
+              <p className="pet-break-remaining" role="status">
+                {formatRemaining(breakRemaining)} 뒤 자동으로 다시 시작
+              </p>
+            )}
+            <div className="pet-session-actions">
+              {activity.consent && <button disabled={busy} onClick={() => void run(async () => {
+                await activityApi.configure({ consent: false, thresholdSeconds: activity.thresholdSeconds, relatedTerms: activity.relatedTerms, suspectTerms: activity.suspectTerms });
+              })}>활동 감지 중지</button>}
+              <button
+                disabled={busy || !session.running}
+                onMouseEnter={() => setBreakPickerOpen(true)}
+                onFocus={() => setBreakPickerOpen(true)}
+                onClick={() =>
+                  void run(async () => {
+                    if (session.paused) {
+                      setBreakUntil(null);
+                      await sessionStore.send({ type: "resume" });
+                    } else {
+                      await sessionStore.send({ type: "pause" });
+                      setBreakUntil(Date.now() + breakMinutes * 60_000);
+                      setBreakPickerOpen(false);
+                    }
+                  })
+                }
+              >
+                {session.paused ? "집중 세션 재개" : "집중 세션 일시정지"}
+              </button>
+              <button
+                disabled={busy || !session.running}
+                onClick={() =>
+                  void run(async () => {
+                    setBreakUntil(null);
+                    await sessionStore.send({ type: "end" });
+                    await showMain("plan");
+                    await bubble(false);
+                  })
+                }
+              >
+                집중 세션 종료
+              </button>
+            </div>
           </div>
           {(error || syncError) && (
             <p className="pet-error" role="alert">

@@ -357,3 +357,78 @@ html.widget-page,
   }
 }
 .pet-nudge { position: absolute; top: 0; left: 2px; right: 2px; padding: 3px 1px; border-radius: 8px; background: #223956; color: #eaf4ff; font-size: 10px; pointer-events: none; border: 1px solid #6697cc; }
+
+/* 일시정지 쉬는 시간 고르기 (5분~1시간, 5분 단위) */
+.pet-break-picker {
+  margin-top: 12px;
+  padding: 14px 14px 16px;
+  border: 1px solid #3b5071;
+  border-radius: 14px;
+  background: #1c2a40;
+  text-align: center;
+}
+.pet-break-picker strong {
+  display: block;
+  font-size: 18px;
+  color: #c2d5f4;
+}
+.pet-break-picker span {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: #92a6c5;
+}
+.pet-break-slider {
+  position: relative;
+  height: 40px;
+  margin-top: 12px;
+}
+.pet-break-dots {
+  position: absolute;
+  inset: 0 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+  z-index: 1;
+}
+.pet-break-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #ffffff66;
+}
+.pet-break-slider input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 40px;
+  margin: 0;
+  border-radius: 999px;
+  background: linear-gradient(to right, #8aa6c1 0 var(--fill), #2a3a55 var(--fill) 100%);
+  cursor: pointer;
+}
+.pet-break-slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 2px 6px #0006;
+  position: relative;
+  z-index: 2;
+}
+.pet-break-slider input[type="range"]::-moz-range-thumb {
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 2px 6px #0006;
+}
+.pet-break-remaining {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: #c2d5f4;
+  text-align: center;
+}
