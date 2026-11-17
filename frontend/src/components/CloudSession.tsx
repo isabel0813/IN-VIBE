@@ -17,17 +17,27 @@ function dismiss(value: CloudState) {
   return value.ask ? cloudMemory.dismiss(value.id, value.ask.video_id) : Promise.resolve();
 }
 async function correct(value: CloudState) {
-  await cloudMemory.refresh();
-  const current = read();
-  // Read the main-owned memory again before sending a correction.
-  if (current?.id !== value.id || current.ask?.video_id !== value.ask?.video_id) return;
-  if (isDesktop()) {
-    const native = await invoke<{ consent: boolean; collecting: boolean }>("browser_read");
-    if (!native.consent || !native.collecting) return;
+  const send = async () => {
+    await cloudMemory.refresh();
+    const current = read();
+    // Recheck after acquiring the shared lock. Another view may have already
+    // corrected this video, ended the session, or replaced the question.
+    if (current?.id !== value.id || current.ask?.video_id !== value.ask?.video_id) return;
+    if (isDesktop()) {
+      const native = await invoke<{ consent: boolean; collecting: boolean }>("browser_read");
+      if (!native.consent || !native.collecting) return;
+    }
+    if (read()?.ask?.video_id !== value.ask?.video_id || read()?.id !== value.id) return;
+    await api.feedback(value.id, value.ask!);
+    await dismiss(value);
+  };
+  if (navigator.locks) {
+    await navigator.locks.request(`mobonyong.feedback.${value.id}.${value.ask?.video_id}`, send);
+  } else {
+    // Older webviews retain the component-local lock; cross-window exclusion
+    // requires a secure-context Web Locks implementation.
+    await send();
   }
-  if (read()?.ask?.video_id !== value.ask?.video_id || read()?.id !== value.id) return;
-  await api.feedback(value.id, value.ask!);
-  await dismiss(value);
 }
 export function useCloudSession() {
   const [value, setValue] = useState(read);

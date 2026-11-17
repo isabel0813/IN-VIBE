@@ -106,15 +106,28 @@ impl Browser {
         };
         let mut seen = std::collections::HashSet::new();
         values
-            .into_iter()
+            .iter()
             .filter(|(o, at)| {
                 now.saturating_sub(*at) <= 2500
                     && o.playing
                     && o.kind == "watch"
-                    && titles.iter().any(|title| title_matches(title, &o.title))
+                    && titles
+                        .iter()
+                        .filter(|title| title_matches(title, &o.title))
+                        .count()
+                        == 1
+                    && !values.iter().any(|(other, other_at)| {
+                        now.saturating_sub(*other_at) <= 2500
+                            && other.playing
+                            && other.video_id != o.video_id
+                            && other
+                                .title
+                                .split_whitespace()
+                                .eq(o.title.split_whitespace())
+                    })
                     && seen.insert(o.video_id.clone())
             })
-            .map(|(o, _)| o)
+            .map(|(o, _)| o.clone())
             .collect()
     }
     pub fn choose_visible(
@@ -209,6 +222,16 @@ impl Browser {
             self.view.observing = false;
             self.discontinuous = true;
         } else if m.kind == "snapshot" && m.generation == self.generation {
+            // A pause/removal between native polls must still break the streak.
+            if self.latest.as_ref().is_some_and(|(old, _)| {
+                !m.observations
+                    .iter()
+                    .any(|o| o.playing && o.kind == "watch" && o.video_id == old.video_id)
+            }) {
+                self.discontinuous = true;
+                self.latest = None;
+                self.consumed = None;
+            }
             self.snapshot = true;
             self.candidates = m.observations.iter().cloned().map(|o| (o, now)).collect();
             self.view.observing = false;
@@ -587,5 +610,48 @@ mod tests {
         assert!(b.visible_videos(5001, &titles).is_empty());
         b.disconnect();
         assert!(b.visible_videos(2100, &titles).is_empty());
+    }
+    #[test]
+    fn pause_between_native_polls_breaks_continuity() {
+        let mut b = Browser::default();
+        b.view.consent = true;
+        let mut m = message(b.generation, true);
+        m.kind = "snapshot".into();
+        let video = m.observation.take().unwrap();
+        m.observations = vec![video.clone()];
+        let native = Sample {
+            process: "chrome.exe".into(),
+            title: "게임 플레이 - YouTube".into(),
+            idle: false,
+        };
+        let titles = vec![native.title.clone()];
+        b.accept(&m, 1000, true);
+        b.choose_visible(&native, "공부", 1000, &titles);
+        b.discontinuous = false;
+        m.observations.clear();
+        b.accept(&m, 1500, true);
+        m.observations = vec![video];
+        b.accept(&m, 1900, true);
+        b.choose_visible(&native, "공부", 2000, &titles);
+        assert!(b.discontinuous);
+    }
+    #[test]
+    fn two_different_ids_with_one_title_are_ambiguous() {
+        let mut b = Browser::default();
+        b.view.consent = true;
+        let mut m = message(b.generation, true);
+        m.kind = "snapshot".into();
+        let first = m.observation.take().unwrap();
+        m.observations = vec![
+            first.clone(),
+            Observation {
+                video_id: Some("zyxwvutsrqp".into()),
+                ..first
+            },
+        ];
+        b.accept(&m, 1000, true);
+        assert!(b
+            .visible_videos(1100, &["게임 플레이 - YouTube".into()])
+            .is_empty());
     }
 }

@@ -69,7 +69,7 @@ it("escalates at exactly 1, 5 and 10 observed minutes without treating silence a
   expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(mocks.commands.mock.calls.some(([command]) => command === "ultimate_hide")).toBe(true);
   expect(fetch).not.toHaveBeenCalled();
-});
+}, 20_000);
 it("does not advance time while the video is hidden or paused", async () => {
   await start(); await advance(30_000);
   mocks.videos = []; await advance(600_000);

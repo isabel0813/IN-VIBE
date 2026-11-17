@@ -118,3 +118,51 @@ it("a late feedback response cannot overwrite a different video's question", asy
   expect(cloudMemory.read()!.ask!.video_id).toBe('zyxwvutsrqp');
   expect(cloudMemory.dismissed()).toContain('abcdefghijk');
 });
+
+it("clears the previous question when native observation fails", async () => {
+  transport('ask'); await start();
+  await screen.findByText('안뇽이 · 너 혹시 딴짓해?');
+  mocks.invoke.mockRejectedValue(new Error('IPC disconnected'));
+  await screen.findByRole('alert',{}, {timeout:2200});
+  expect(screen.queryByText('안뇽이 · 너 혹시 딴짓해?')).toBeNull();
+});
+it("removes session video IDs and cached state after session end", async () => {
+  transport('ask'); await start();
+  await screen.findByText('안뇽이 · 너 혹시 딴짓해?');
+  fireEvent.click(screen.getByRole('button',{name:'맞아, 공부로 돌아갈게'}));
+  await waitFor(()=>expect(cloudMemory.dismissed()).not.toHaveLength(0));
+  fireEvent.click(screen.getByRole('button',{name:'세션 종료'}));
+  await waitFor(()=>expect(localStorage.getItem('mobonyong.cloud-session')).toBeNull());
+  expect(cloudMemory.dismissed()).toHaveLength(0);
+});
+it("stops local observation even when server session termination fails", async () => {
+  vi.stubGlobal('fetch',vi.fn(async(url:string)=> {
+    if(url.endsWith('/end')) return new Response('{}',{status:500});
+    return new Response(JSON.stringify(url.endsWith('/sessions')?{id:7,task:'공부'}:{action:'ignore',reason:'공부'}));
+  }));
+  await start();
+  fireEvent.click(screen.getByRole('button',{name:'세션 종료'}));
+  await screen.findByRole('alert');
+  expect(mocks.session.running).toBe(false);
+  expect(localStorage.getItem('mobonyong.cloud-session')).toBeNull();
+});
+it("serializes feedback across two question views using the origin lock", async () => {
+  let queue=Promise.resolve();
+  const requests:string[]=[];
+  Object.defineProperty(navigator,'locks',{configurable:true,value:{request:(name:string,callback:()=>Promise<void>)=> {
+    requests.push(name);
+    const next=queue.then(callback); queue=next.catch(()=>{}); return next;
+  }}});
+  const fetchMock=vi.fn(async()=>new Response('{}'));
+  vi.stubGlobal('fetch',fetchMock);
+  cloudMemory.set({id:7,task:'공부',ask:{title:'gameplay',video_id:'abcdefghijk'},reason:'게임'});
+  try {
+    render(<><CloudQuestion /><CloudQuestion /></>);
+    const buttons=screen.getAllByRole('button',{name:'아니? 전혀~'});
+    fireEvent.click(buttons[0]); fireEvent.click(buttons[1]);
+    await waitFor(()=>expect(screen.queryAllByRole('button',{name:'아니? 전혀~'})).toHaveLength(0));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(requests).toHaveLength(2);
+    expect(requests[0]).toBe(requests[1]);
+  } finally { Reflect.deleteProperty(navigator,'locks'); }
+});
