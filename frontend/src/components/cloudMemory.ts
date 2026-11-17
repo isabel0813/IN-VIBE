@@ -1,5 +1,6 @@
 export type Video = { title: string; video_id: string };
-export type CloudState = { id: number; task: string; ask: Video | null; reason: string };
+import type { InterventionStage } from "./intervention";
+export type CloudState = { id: number; task: string; ask: Video | null; reason: string; stage?: InterventionStage };
 type Snapshot = { value: CloudState | null; dismissed: string[] };
 type Message = { type: "reset" | "state" | "read" | "dismiss"; owner?: string; revision?: number; request?: string; snapshot?: Snapshot; session?: number; video?: string };
 export interface MemoryPort {
@@ -30,7 +31,7 @@ export function createCloudMemory(owner: boolean, port?: MemoryPort) {
   function dismiss(session: number, video: string) {
     if (snapshot.value?.id !== session) return;
     const value = snapshot.value;
-    snapshot = { value: value.ask?.video_id === video ? { ...value, ask: null } : value,
+    snapshot = { value: value.ask?.video_id === video ? { ...value, ask: null, reason: "", stage: undefined } : value,
       dismissed: [...new Set([...snapshot.dismissed, video])] };
     revision++;
     publish();

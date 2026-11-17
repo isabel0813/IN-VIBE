@@ -1,5 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("./intervention", async original => ({
+  ...await original<typeof import("./intervention")>(),
+  escalation: { firstMs: 0, secondMs: 300_000, ultimateMs: 600_000 },
+}));
 const mocks = vi.hoisted(() => ({
   session: { running: false, paused: false, task: null as null | { id: number; name: string }, character: "idle", simulated: false },
   invoke: vi.fn(), show: vi.fn(), send: vi.fn(),

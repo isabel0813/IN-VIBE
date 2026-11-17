@@ -370,7 +370,7 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
       >
         <img draggable={false} src={characterArt[session.character]} alt="" />
         <span className="pet-state-dot" aria-hidden="true" />
-        {!layout.open && !session.paused && (cloud?.ask || (session.character === "suspect" && activity.incident)) && <span className="pet-nudge">잠깐, 확인!</span>}
+        {!layout.open && !session.paused && (cloud?.ask || (session.character === "suspect" && activity.incident)) && <span className="pet-nudge">{cloud?.stage === 2 ? "아직 보고 있뇽?" : "잠깐, 확인!"}</span>}
       </button>
       {native && !layout.open && <div
         className="pet-drag-handle"

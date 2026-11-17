@@ -22,6 +22,7 @@ struct AppState {
     browser: Mutex<browser::Browser>,
     layout: Mutex<Layout>,
     positioned: AtomicBool,
+    ultimate: Mutex<Option<bool>>,
 }
 type Result<T> = std::result::Result<T, String>;
 fn native<T>(value: tauri::Result<T>) -> Result<T> {
@@ -53,6 +54,7 @@ fn session_action(
     action: Action,
 ) -> Result<Session> {
     allowed(&caller)?;
+    let close_ultimate = matches!(&action, Action::Start { .. } | Action::End | Action::Pause | Action::Complete { .. });
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| e.to_string())?
@@ -78,6 +80,7 @@ fn session_action(
     };
     // The acknowledgement is also a snapshot; revision ordering tolerates event/response races.
     let _ = app.emit("focus-session", &next);
+    if close_ultimate { hide_ultimate(&app, &state)?; }
     Ok(next)
 }
 
@@ -133,7 +136,12 @@ fn activity_configure(
     }
     let _ = app.emit("focus-session", &*session);
     let _ = app.emit("activity-state", &detector.view);
-    Ok(detector.view.clone())
+    let view = detector.view.clone();
+    drop(browser);
+    drop(detector);
+    drop(session);
+    if !view.consent { hide_ultimate(&app, &state)?; }
+    Ok(view)
 }
 
 #[tauri::command]
@@ -204,6 +212,7 @@ fn browser_read(caller: WebviewWindow, state: State<'_, AppState>) -> Result<bro
 #[tauri::command]
 fn browser_configure(
     caller: WebviewWindow,
+    app: AppHandle,
     state: State<'_, AppState>,
     consent: bool,
 ) -> Result<browser::BrowserView> {
@@ -216,7 +225,89 @@ fn browser_configure(
     browser.invalidate();
     browser.view.consent = consent;
     detector.stop();
-    Ok(browser.view.clone())
+    let view = browser.view.clone();
+    drop(browser);
+    drop(detector);
+    if !consent { hide_ultimate(&app, &state)?; }
+    Ok(view)
+}
+
+fn can_show_ultimate(session: &Session, activity_consent: bool, browser: &browser::BrowserView, task_id: i64) -> bool {
+    session.running && !session.paused
+        && session.task.as_ref().is_some_and(|task| task.id == task_id)
+        && activity_consent && browser.consent && browser.connected && browser.collecting
+}
+
+fn hide_ultimate(app: &AppHandle, state: &AppState) -> Result<()> {
+    let previous = state.ultimate.lock().map_err(|e| e.to_string())?.take();
+    if let Some(fullscreen) = previous {
+        if let Err(error) = native(window(app, "main")?.set_fullscreen(fullscreen)) {
+            *state.ultimate.lock().map_err(|e| e.to_string())? = Some(fullscreen);
+            return Err(error);
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn ultimate_show(caller: WebviewWindow, app: AppHandle, state: State<'_, AppState>, task_id: i64) -> Result<()> {
+    if caller.label() != "main" { return Err("궁극기는 메인 화면에서만 표시할 수 있어요.".into()); }
+    {
+        // Match the sampler's lock order and release all locks before window calls.
+        let session = state.session.lock().map_err(|e| e.to_string())?;
+        let detector = state.activity.lock().map_err(|e| e.to_string())?;
+        let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
+        browser.status(activity_now(), session.running && !session.paused && detector.view.consent);
+        if !can_show_ultimate(&session, detector.view.consent, &browser.view, task_id) {
+            return Err("동의한 실행 중 세션에서만 궁극기를 표시할 수 있어요.".into());
+        }
+    }
+    if state.ultimate.lock().map_err(|e| e.to_string())?.is_some() { return Ok(()); }
+    let main = window(&app, "main")?;
+    let previous = native(main.is_fullscreen())?;
+    native(main.set_fullscreen(true))?;
+    *state.ultimate.lock().map_err(|e| e.to_string())? = Some(previous);
+    // Existing navigation resolves to the current one-line focus view.
+    if let Err(error) = restore_main(&app, "input") {
+        let _ = hide_ultimate(&app, &state);
+        return Err(error);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod ultimate_tests {
+    use super::*;
+
+    #[test]
+    fn requires_the_current_running_session_and_both_native_consents() {
+        let mut session = Session::default();
+        session.apply(Action::Start { task: session::FocusTask { id: 7, name: "공부".into() } }, 1000, true).unwrap();
+        let mut browser = browser::BrowserView { consent: true, connected: true, collecting: true, ..Default::default() };
+        assert!(can_show_ultimate(&session, true, &browser, 7));
+        assert!(!can_show_ultimate(&session, false, &browser, 7));
+        assert!(!can_show_ultimate(&session, true, &browser, 8));
+        session.paused = true;
+        assert!(!can_show_ultimate(&session, true, &browser, 7));
+        session.paused = false;
+        browser.consent = false;
+        assert!(!can_show_ultimate(&session, true, &browser, 7));
+        browser.consent = true;
+        browser.collecting = false;
+        assert!(!can_show_ultimate(&session, true, &browser, 7));
+        browser.collecting = true;
+        browser.connected = false;
+        assert!(!can_show_ultimate(&session, true, &browser, 7));
+        browser.connected = true;
+        session.running = false;
+        assert!(!can_show_ultimate(&session, true, &browser, 7));
+    }
+}
+
+#[tauri::command]
+fn ultimate_hide(caller: WebviewWindow, app: AppHandle, state: State<'_, AppState>) -> Result<()> {
+    allowed(&caller)?;
+    hide_ultimate(&app, &state)
 }
 
 #[cfg(windows)]
@@ -486,6 +577,8 @@ pub fn run() {
             browser_read,
             browser_video,
             browser_videos,
+            ultimate_show,
+            ultimate_hide,
             browser_configure,
             widget_read_layout,
             widget_bubble,

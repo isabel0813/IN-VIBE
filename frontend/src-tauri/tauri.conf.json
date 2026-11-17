@@ -20,7 +20,7 @@
         "minWidth": 760,
         "minHeight": 600,
         "center": true,
-        "theme": "Dark"
+        "theme": "Light"
       },
       {
         "label": "widget",

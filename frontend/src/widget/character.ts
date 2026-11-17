@@ -9,12 +9,16 @@ export const characterArt: Record<CharacterState, string> = {
   recovery: "/characters/recovery.svg",
   complete: "/characters/complete.svg",
 };
+// 안뇽이 원본 일러스트 (배경 투명). 홈 화면에서 쓴다.
+export const annyongArt = "/characters/annyong.png";
+// Confirmed 10-minute intervention image.
+export const ultimateArt = "/characters/ultimate.png";
 export const characterCopy: Record<
   CharacterState,
   { label: string; line: string }
 > = {
   idle: { label: "작업 대기", line: "안뇽. 할 일 하나만 골라 봐." },
-  focus: { label: "집중 중", line: "가라 인간. 오늘 마감부터 처리해라." },
+  focus: { label: "집중 중", line: "가라 인간. 지금 정한 일부터 처리해라." },
   suspect: {
     label: "딴짓 의심",
     line: "흠... 우리 분명 공부하기로 하지 않았나?",

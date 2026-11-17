@@ -97,3 +97,19 @@ it("reports failure to remove legacy activity when storage access is blocked", (
   try { expect(removeLegacyCloudData()).toBe(false); }
   finally { remove.mockRestore(); }
 });
+it("shares escalation in memory and removes raw question metadata after an answer", async () => {
+  const write = vi.spyOn(Storage.prototype, "setItem");
+  const port = network();
+  const main = createCloudMemory(true, port());
+  const widget = createCloudMemory(false, port());
+  main.set({ ...value, stage: 3 });
+  await widget.refresh();
+  expect(widget.read()?.stage).toBe(3);
+  await widget.dismiss(value.id, video.video_id);
+  expect(main.read()).toMatchObject({ ask: null, reason: "", stage: undefined });
+  expect(widget.read()).toEqual(main.read());
+  expect(write).not.toHaveBeenCalled();
+  main.reset(); await widget.refresh();
+  expect(widget.read()).toBeNull(); expect(widget.dismissed()).toEqual([]);
+  write.mockRestore();
+});

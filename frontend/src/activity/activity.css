@@ -13,3 +13,7 @@
 .recovery-flow input { width: 85px; padding: 6px; margin: 6px; background: #0e192a; border: 1px solid #53698d; border-radius: 6px; color: #e7efff; }
 .recovery-flow button { display: block; width: 100%; margin: 6px 0; }
 .recovery-flow .observed-title { overflow-wrap: anywhere; max-height: 54px; overflow: auto; color: #adbad1; }
+.clean .activity-controls { color: #284358; border-color: #cedae3; background: #fff; }
+.clean .activity-controls summary { color: #284358; }
+.clean .activity-controls button { color: #284358; border-color: #b9ccdb; background: #e8f0f6; }
+.clean .activity-fields input { color: #172b3b; border-color: #cedae3; background: #f4f8fb; }

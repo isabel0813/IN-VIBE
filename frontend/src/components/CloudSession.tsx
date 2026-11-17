@@ -5,6 +5,8 @@ import { isDesktop, showWidget } from "../desktop/bridge";
 import { sessionStore, useFocusSession } from "../session/store";
 import { backgroundVideo, shouldAsk } from "./videoPolicy";
 import type { Judgment } from "./videoPolicy";
+import { escalation, InterventionClock } from "./intervention";
+import { ultimateArt } from "../widget/character";
 
 import { cloudMemory, removeLegacyCloudData } from "./cloudMemory";
 import type { CloudState } from "./cloudMemory";
@@ -34,21 +36,59 @@ export function useCloudSession() {
   }, []);
   return value;
 }
-export function CloudQuestion() {
-  const value = useCloudSession();
+function useQuestionResponse() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const lock = useRef(false);
-  if (!value?.ask) return null;
-  return <section role="status" className="cloud-question"><strong>안뇽이 · 너 혹시 딴짓해?</strong><p>{value.ask.title}</p><p>{value.reason} · AI의 추정이에요.</p>
-    <button disabled={busy} onClick={async () => {
-      if (lock.current) return;
-      lock.current = true; setBusy(true); setError("");
-      try { await correct(value); }
-      catch (e) { setError(String(e)); } finally { lock.current = false; setBusy(false); }
-    }}>아니? 전혀~</button><button disabled={busy} onClick={() => { void dismiss(value).catch(e => setError(String(e))); }}>맞아, 공부로 돌아갈게</button>
+  async function answer(value: CloudState, correction: boolean) {
+    if (lock.current) return;
+    lock.current = true; setBusy(true); setError("");
+    try { if (correction) await correct(value); else await dismiss(value); }
+    catch (e) { setError(String(e)); }
+    finally { lock.current = false; setBusy(false); }
+  }
+  return { busy, error, answer };
+}
+function QuestionActions({ value }: { value: CloudState }) {
+  const { busy, error, answer } = useQuestionResponse();
+  return <>
+    <div className="cloud-question-actions">
+      <button disabled={busy} onClick={() => void answer(value, false)}>맞아, 공부로 돌아갈게</button>
+      <button className="ghost" disabled={busy} onClick={() => void answer(value, true)}>아니? 전혀~</button>
+    </div>
     {error && <p role="alert">{error}</p>}
+  </>;
+}
+export function CloudQuestion() {
+  const value = useCloudSession();
+  if (!value?.ask) return null;
+  return <section role="status" className="cloud-question"><strong>안뇽이 · 너 혹시 딴짓해?</strong>
+    {value.stage && value.stage >= 2 && <p className="cloud-question-nudge">아직 보고 있뇽? 벌써 5분이 넘었어.</p>}
+    <p className="cloud-question-title">{value.ask.title}</p><p className="cloud-question-reason">{value.reason} · AI의 추정이에요.</p>
+    <QuestionActions value={value} />
   </section>;
+}
+export function UltimateOverlay({ onEnd }: { onEnd?: () => void } = {}) {
+  const value = useCloudSession();
+  const dialog = useRef<HTMLDivElement>(null);
+  const open = !!value?.ask && value.stage === 3;
+  useEffect(() => { if (open) dialog.current?.focus(); }, [open]);
+  if (!open || !value) return null;
+  return <div className="ultimate-overlay" ref={dialog} tabIndex={-1} role="alertdialog" aria-modal="true" aria-label="안뇽이 궁극기"
+    onKeyDown={event => {
+      if (event.key !== "Tab") return;
+      const buttons = [...(dialog.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])];
+      if (!buttons.length) { event.preventDefault(); return; }
+      const first = buttons[0], last = buttons[buttons.length - 1];
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialog.current)) { event.preventDefault(); first.focus(); }
+    }}>
+    <img src={ultimateArt} alt="안뇽이 궁극기" />
+    <div className="ultimate-card"><strong>10분째야. 이제 진짜 돌아가자.</strong>
+      <p>{value.ask?.title}</p><p>{value.reason} · AI의 추정이에요.</p><QuestionActions value={value} />
+      {onEnd && <button className="text-button" onClick={onEnd}>집중 세션 종료</button>}
+    </div>
+  </div>;
 }
 // Exactly one controller lives in the main window. Widget views only subscribe
 // with useCloudSession/useFocusSession and never create another server session.
@@ -64,6 +104,7 @@ export function useCloudController() {
   const startLock = useRef(false);
   const active = useRef<number | null>(null);
   const observationEpoch = useRef(0);
+  const clock = useRef(new InterventionClock(escalation));
   // Relaunch never silently resumes a server session or cloud transmission.
   useEffect(() => {
     if (!removeLegacyCloudData()) setError("이전 영상 저장 정보를 지우지 못했어요. 로컬 저장소 접근을 확인해 주세요.");
@@ -79,9 +120,10 @@ export function useCloudController() {
   }, [ready, session.running, session.task?.id, value]);
   useEffect(() => {
     active.current = value?.id ?? null;
-    if (!value || !consent) { observationEpoch.current++; judgments.current.clear(); dismissed.current.clear(); }
+    if (!value || !consent) { observationEpoch.current++; judgments.current.clear(); dismissed.current.clear(); clock.current.clear(); }
     if (!value || !consent || !isDesktop() || !session.running || session.paused) {
-      if (value?.ask || value?.reason) write({ ...value, ask: null, reason: "" });
+      clock.current.pause();
+      if (value?.ask || value?.reason || value?.stage) write({ ...value, ask: null, reason: "", stage: undefined });
       return;
     }
     let cancelled = false;
@@ -96,14 +138,16 @@ export function useCloudController() {
         if (!native.consent || !native.collecting) {
           observationEpoch.current++;
           judgments.current.clear(); dismissed.current.clear();
+          clock.current.clear();
           const current = read();
-          if (current?.ask || current?.reason) write({ ...current, ask: null, reason: "" });
+          if (current?.ask || current?.reason || current?.stage) write({ ...current, ask: null, reason: "", stage: undefined });
           return;
         }
         const videos = await invoke<{ title: string; videoId: string }[]>("browser_videos");
         if (cancelled || active.current !== id || read()?.id !== id) return;
         for (const video of cloudMemory.dismissed()) dismissed.current.add(video);
         const eligible = videos.filter(video => !backgroundVideo(video.title));
+        clock.current.observe(eligible.filter(video => !dismissed.current.has(video.videoId)).map(video => video.videoId), Date.now());
         for (const video of eligible) {
           const key = `${id}:${video.videoId}`;
           if (judgments.current.has(key) || dismissed.current.has(video.videoId)) continue;
@@ -121,23 +165,35 @@ export function useCloudController() {
         const current = read()!;
         const asking = eligible.filter(video => {
           const result = judgments.current.get(`${id}:${video.videoId}`);
-          return result && !dismissed.current.has(video.videoId) && shouldAsk({ title: video.title, video_id: video.videoId }, result);
+          return result && clock.current.stage(video.videoId) > 0 && !dismissed.current.has(video.videoId) && shouldAsk({ title: video.title, video_id: video.videoId }, result);
         });
-        const next = asking.find(video => video.videoId === current.ask?.video_id) ?? asking[0];
+        asking.sort((a, b) => clock.current.stage(b.videoId) - clock.current.stage(a.videoId));
+        const highest = asking[0] ? clock.current.stage(asking[0].videoId) : 0;
+        const next = asking.find(video => video.videoId === current.ask?.video_id && clock.current.stage(video.videoId) === highest) ?? asking[0];
         const ask = next ? { title: next.title, video_id: next.videoId } : null;
-        if (current.ask?.video_id !== ask?.video_id) write({ ...current, ask, reason: next ? judgments.current.get(`${id}:${next.videoId}`)!.reason : "" });
+        const stage = next ? clock.current.stage(next.videoId) || undefined : undefined;
+        if (current.ask?.video_id !== ask?.video_id || current.stage !== stage) write({ ...current, ask, stage, reason: next ? judgments.current.get(`${id}:${next.videoId}`)!.reason : "" });
       } catch (e) {
+        clock.current.pause();
         if (!cancelled) {
           const current = read();
-          if (current?.id === id && current.ask) write({ ...current, ask: null });
+          if (current?.id === id && current.ask) write({ ...current, ask: null, reason: "", stage: undefined });
           setError(`영상 관측을 확인하지 못했어요. ${String(e)}`);
         }
       }
       finally { reading = false; }
     }
     void poll(); const timer = setInterval(() => void poll(), 1000);
-    return () => { cancelled = true; clearInterval(timer); };
+    return () => { cancelled = true; clearInterval(timer); clock.current.pause(); };
   }, [value?.id, consent, session.running, session.paused]);
+  useEffect(() => {
+    if (!isDesktop() || !consent || !session.running || session.paused || !value?.ask || value.stage !== 3) return;
+    let cancelled = false;
+    void invoke("ultimate_show", { taskId: session.task?.id }).catch(e => {
+      if (!cancelled) setError(`궁극기 창을 표시하지 못했어요. ${String(e)}`);
+    });
+    return () => { cancelled = true; void invoke("ultimate_hide").catch(() => {}); };
+  }, [consent, session.running, session.paused, session.task?.id, value?.id, value?.ask?.video_id, value?.stage]);
   async function start() {
     if (startLock.current || busy || !ready || value || read() || session.running || !task.trim()) return;
     if (task.trim().length > 100 || /[\r\n]/.test(task)) {

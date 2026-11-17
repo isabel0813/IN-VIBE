@@ -11,15 +11,26 @@ import { sessionStore } from "../session/store";
 import { characterStates } from "../session/model";
 import { characterCopy } from "./character";
 import { previewPlacement } from "./geometry";
+import { cloudMemory } from "../components/cloudMemory";
 
 beforeEach(async () => {
+  cloudMemory.reset();
   await sessionStore.send({ type: "end" });
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { cloudMemory.reset(); vi.unstubAllGlobals(); });
 const clickPet = () =>
   fireEvent.click(screen.getByRole("button", { name: /^안뇽이:/ }));
 
 describe("Annyong widget preview behavior", () => {
+  it("shows the five-minute reminder without stealing focus or opening the bubble", async () => {
+    const value = { id: 99, task: "공부", ask: { title: "합성 영상", video_id: "abcdefghijk" }, reason: "합성 판단", stage: 1 as const };
+    cloudMemory.set(value);
+    render(<Widget native={false} />);
+    expect(screen.getByText("잠깐, 확인!")).toBeTruthy();
+    await act(() => cloudMemory.set({ ...value, stage: 2 }));
+    expect(screen.getByText("아직 보고 있뇽?")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
   it("only opens on click and closes on Escape or outside pointerdown", () => {
     render(<Widget native={false} />);
     expect(screen.queryByRole("dialog")).toBeNull();

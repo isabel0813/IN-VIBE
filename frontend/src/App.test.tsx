@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { sessionStore } from "./session/store";
@@ -29,10 +29,22 @@ async function start() {
 }
 
 describe("C landing one-line focus flow", () => {
+  it("opens the clean menu without exposing planner actions or making API requests", () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "메뉴 열기" }));
+    const menu = screen.getByRole("complementary", { name: "메뉴" });
+    expect(within(menu).getByRole("button", { name: "집중 화면" })).toBeTruthy();
+    expect(within(menu).queryByText(/나의 계획|할 일 정리|여유 시간/)).toBeNull();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("complementary", { name: "메뉴" })).toBeNull();
+    expect(fetch).not.toHaveBeenCalled();
+  });
   it("starts without task/plan/settings queries or AI parsing and without consent", async () => {
     const widget = vi.spyOn(desktop, "showWidget");
     render(<App />);
-    expect(screen.getByRole("heading", { name: "오늘은 뭐 할 거뇽?" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "오늘은 뭘 해야 하뇽?" })).toBeTruthy();
+    expect(screen.getByText("자세히 적을수록 안뇽이가 더 잘 알아볼 수 있어!")).toBeTruthy();
+    expect(screen.getByPlaceholderText("예: 물리학2 패러데이 법칙 공부하기")).toBeTruthy();
     expect((screen.getByLabelText("지금 공부할 일") as HTMLInputElement).type).toBe("text");
     expect(fetch).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "AI로 할 일 정리" })).toBeNull();
@@ -87,7 +99,7 @@ describe("C landing one-line focus flow", () => {
   it("shares task and pause/end state with the widget and terminates the server session once", async () => {
     render(<App />); await start();
     fireEvent.click(screen.getByRole("button", { name: /^안뇽이:/ }));
-    expect(screen.getByText("전자기 유도 공부")).toBeTruthy();
+    expect(within(screen.getByRole("dialog", { name: "안뇽이 말풍선" })).getByText("전자기 유도 공부")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "집중 세션 일시정지" }));
     await waitFor(() => expect(sessionStore.getSnapshot().session.paused).toBe(true));
     fireEvent.click(screen.getByRole("button", { name: "집중 세션 재개" }));

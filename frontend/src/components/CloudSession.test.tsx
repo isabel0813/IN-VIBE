@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, cleanup } from "@testing-library/react";
+// These contract tests skip the delay. Production 1/5/10-minute timing is
+// exercised with virtual time in Intervention.test.tsx.
+vi.mock("./intervention", async original => ({
+  ...await original<typeof import("./intervention")>(),
+  escalation: { firstMs: 0, secondMs: 300_000, ultimateMs: 600_000 },
+}));
 const mocks = vi.hoisted(() => ({ session: { running: false, paused: false, task: null as null | {id:number;name:string} }, send: vi.fn(), invoke: vi.fn(), show: vi.fn() }));
 vi.mock("../desktop/bridge", () => ({ isDesktop: () => true, showWidget: mocks.show }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (command: string) => command === "browser_read"
