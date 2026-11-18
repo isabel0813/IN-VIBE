@@ -24,8 +24,7 @@ function openSettings() {
   fireEvent.click(screen.getByRole("button", { name: "감지·AI 설정" }));
 }
 function backToFocus() {
-  fireEvent.click(screen.getByRole("button", { name: "메뉴 열기" }));
-  fireEvent.click(screen.getByRole("button", { name: "집중 화면" }));
+  fireEvent.click(screen.getByRole("button", { name: "집중 화면으로 돌아가기" }));
 }
 function fill(task = "전자기 유도 공부") {
   fireEvent.change(screen.getByLabelText("지금 공부할 일"), { target: { value: task } });
@@ -41,7 +40,8 @@ describe("C landing one-line focus flow", () => {
     render(<App />);
     fireEvent.click(screen.getByRole("button", { name: "메뉴 열기" }));
     const menu = screen.getByRole("complementary", { name: "메뉴" });
-    expect(within(menu).getByRole("button", { name: "집중 화면" })).toBeTruthy();
+    expect(within(menu).getByRole("button", { name: "감지·AI 설정" })).toBeTruthy();
+    expect(within(menu).queryByRole("button", { name: "집중 화면" })).toBeNull();
     expect(within(menu).queryByText(/나의 계획|할 일 정리|여유 시간/)).toBeNull();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("complementary", { name: "메뉴" })).toBeNull();

@@ -82,7 +82,6 @@ export default function App() {
       <aside id="app-menu" className="menu-drawer" aria-label="메뉴" hidden={!menuOpen}>
         <div className="menu-head"><strong>메뉴</strong><button className="icon-button" aria-label="메뉴 닫기" onClick={() => setMenuOpen(false)}><Icon name="close" /></button></div>
         <nav className="menu-nav" aria-label="주 메뉴">
-          <button className={`menu-item ${view === "focus" ? "selected" : ""}`} onClick={() => navigate("focus")}><Icon name="play" />집중 화면</button>
           <button className={`menu-item ${view === "settings" ? "selected" : ""}`} onClick={() => navigate("settings")}><Icon name="menu" />감지·AI 설정</button>
         </nav>
         <section className="menu-section">
@@ -123,7 +122,10 @@ export default function App() {
           <CloudQuestion />
         </section>
         <section className="focus-settings-content" aria-label="집중 설정" hidden={view !== "settings"}>
-          <div className="page-head"><h1>집중 설정</h1></div>
+          <div className="page-head">
+            <button className="back-button" aria-label="집중 화면으로 돌아가기" onClick={() => navigate("focus")}><Icon name="back" />뒤로</button>
+            <h1>집중 설정</h1>
+          </div>
           <label className="hero-consent"><input type="checkbox" checked={focus.consent} onChange={event => focus.setConsent(event.target.checked)} /><span>AI 판단에 동의합니다. 작업명과 관측한 영상 제목·ID를 API로 보내며 AI가 제목을 분류합니다.</span></label>
           <p className="hero-note">Windows 활동 감지와 YouTube 연결에도 각각 동의해야 영상 판단이 시작돼요. AI 동의는 체크를 풀기 전까지 유지돼요.</p>
           <ActivityControls />
