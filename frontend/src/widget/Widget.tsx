@@ -339,9 +339,6 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
               </p>
             )}
             <div className="pet-session-actions">
-              {activity.consent && <button disabled={busy} onClick={() => void run(async () => {
-                await activityApi.configure({ consent: false, thresholdSeconds: activity.thresholdSeconds, relatedTerms: activity.relatedTerms, suspectTerms: activity.suspectTerms });
-              })}>활동 감지 중지</button>}
               <button
                 disabled={busy || !session.running}
                 aria-expanded={session.paused ? undefined : breakPickerOpen}
