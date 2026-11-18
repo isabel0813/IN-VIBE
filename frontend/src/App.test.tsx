@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { sessionStore } from "./session/store";
@@ -109,6 +109,7 @@ describe("C landing one-line focus flow", () => {
     fireEvent.click(screen.getByRole("button", { name: /^안뇽이:/ }));
     expect(within(screen.getByRole("dialog", { name: "안뇽이 말풍선" })).getByText("전자기 유도 공부")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "일시정지" }));
+    fireEvent.click(screen.getByRole("button", { name: "쉬기 시작" }));
     await waitFor(() => expect(sessionStore.getSnapshot().session.paused).toBe(true));
     fireEvent.click(screen.getByRole("button", { name: "재개" }));
     await waitFor(() => expect(sessionStore.getSnapshot().session.paused).toBe(false));
@@ -120,7 +121,7 @@ describe("C landing one-line focus flow", () => {
     expect(localStorage.getItem("mobonyong.cloud-session")).toBeNull();
     expect(requests.every(r => r.path.startsWith("/sessions"))).toBe(true);
   });
-  it("keeps AI consent explicit and persistent only while the main controller is mounted", async () => {
+  it("keeps AI consent explicit and remembers it after reopening the app", async () => {
     render(<App />); fill();
     openSettings();
     const consent = screen.getByRole("checkbox", { name: /AI 판단에 동의합니다/ }) as HTMLInputElement;
@@ -131,6 +132,14 @@ describe("C landing one-line focus flow", () => {
     openSettings();
     expect((screen.getByRole("checkbox", { name: /AI 판단에 동의합니다/ }) as HTMLInputElement).checked).toBe(true);
     expect(fetch).not.toHaveBeenCalled();
+    cleanup();
+    render(<App />); openSettings();
+    const again = screen.getByRole("checkbox", { name: /AI 판단에 동의합니다/ }) as HTMLInputElement;
+    expect(again.checked).toBe(true);
+    fireEvent.click(again);
+    cleanup();
+    render(<App />); openSettings();
+    expect((screen.getByRole("checkbox", { name: /AI 판단에 동의합니다/ }) as HTMLInputElement).checked).toBe(false);
   });
   it("ends from the main screen without requesting legacy plan data", async () => {
     render(<App />); await start();

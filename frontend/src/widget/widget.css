@@ -460,3 +460,23 @@ html.widget-page,
   color: #2b3a52;
   text-align: center;
 }
+
+.pet-break-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.pet-bubble .pet-break-buttons button {
+  flex: 1;
+  padding: 9px 10px;
+  font-size: 14px;
+}
+.pet-bubble .pet-break-buttons .pet-break-start {
+  background: #2b3a52;
+  border-color: #2b3a52;
+  color: #ffffff;
+  font-weight: 600;
+}
+.pet-bubble .pet-break-buttons .pet-break-start:hover:not(:disabled) {
+  background: #3b4e6c;
+}

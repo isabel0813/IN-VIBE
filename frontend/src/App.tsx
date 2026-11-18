@@ -125,7 +125,7 @@ export default function App() {
         <section className="focus-settings-content" aria-label="집중 설정" hidden={view !== "settings"}>
           <div className="page-head"><h1>집중 설정</h1></div>
           <label className="hero-consent"><input type="checkbox" checked={focus.consent} onChange={event => focus.setConsent(event.target.checked)} /><span>AI 판단에 동의합니다. 작업명과 관측한 영상 제목·ID를 API로 보내며 AI가 제목을 분류합니다.</span></label>
-          <p className="hero-note">Windows 활동 감지와 YouTube 연결에도 각각 동의해야 영상 판단이 시작돼요. AI 동의는 앱을 다시 열면 꺼져요.</p>
+          <p className="hero-note">Windows 활동 감지와 YouTube 연결에도 각각 동의해야 영상 판단이 시작돼요. AI 동의는 체크를 풀기 전까지 유지돼요.</p>
           <ActivityControls />
           {!isDesktop() && <p className="hero-note">Windows 활동 감지는 데스크톱 앱에서 설정할 수 있어요.</p>}
           <details className="legacy-access"><summary>기존 작업 데이터</summary><p>이전에 등록한 작업은 기존 화면에서 확인할 수 있어요.</p>

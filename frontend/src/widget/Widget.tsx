@@ -294,7 +294,7 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
               </button>
             )}
           </form>
-          <div className="pet-pause-zone" onMouseLeave={() => setBreakPickerOpen(false)}>
+          <div className="pet-pause-zone">
             {breakPickerOpen && session.running && !session.paused && (
               <div className="pet-break-picker" role="group" aria-label="쉬는 시간 고르기">
                 <strong>{breakMinutes >= 60 ? "1시간" : `${breakMinutes}분`} 쉬기</strong>
@@ -314,6 +314,23 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
                     onChange={(event) => setBreakMinutes(Number(event.target.value))}
                   />
                 </div>
+                <div className="pet-break-buttons">
+                  <button type="button" disabled={busy} onClick={() => setBreakPickerOpen(false)}>취소</button>
+                  <button
+                    type="button"
+                    className="pet-break-start"
+                    disabled={busy || !session.running}
+                    onClick={() =>
+                      void run(async () => {
+                        await sessionStore.send({ type: "pause" });
+                        setBreakUntil(Date.now() + breakMinutes * 60_000);
+                        setBreakPickerOpen(false);
+                      })
+                    }
+                  >
+                    쉬기 시작
+                  </button>
+                </div>
               </div>
             )}
             {session.paused && breakRemaining !== null && (
@@ -327,20 +344,14 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
               })}>활동 감지 중지</button>}
               <button
                 disabled={busy || !session.running}
-                onMouseEnter={() => setBreakPickerOpen(true)}
-                onFocus={() => setBreakPickerOpen(true)}
-                onClick={() =>
+                aria-expanded={session.paused ? undefined : breakPickerOpen}
+                onClick={() => {
+                  if (!session.paused) { setBreakPickerOpen(open => !open); return; }
                   void run(async () => {
-                    if (session.paused) {
-                      setBreakUntil(null);
-                      await sessionStore.send({ type: "resume" });
-                    } else {
-                      await sessionStore.send({ type: "pause" });
-                      setBreakUntil(Date.now() + breakMinutes * 60_000);
-                      setBreakPickerOpen(false);
-                    }
-                  })
-                }
+                    setBreakUntil(null);
+                    await sessionStore.send({ type: "resume" });
+                  });
+                }}
               >
                 {session.paused ? "재개" : "일시정지"}
               </button>

@@ -30,19 +30,19 @@ it("keeps the session paused until the break ends", async () => {
   expect(sessionStore.getSnapshot().session.paused).toBe(true);
 });
 
-it("shows the 5-minute step slider on hover and pauses for the chosen time", async () => {
+it("opens the 5-minute step slider on click and pauses for the chosen time", async () => {
   await sessionStore.send({ type: "start", task: { id: 7, name: "슬라이더" } });
   render(<Widget native={false} />);
   fireEvent.click(screen.getByRole("button", { name: /^안뇽이:/ }));
   const pause = screen.getByRole("button", { name: "일시정지" });
-  fireEvent.mouseEnter(pause);
+  fireEvent.click(pause);
+  expect(sessionStore.getSnapshot().session.paused).toBe(false);
   const slider = screen.getByRole("slider", { name: "쉬는 시간(분)" }) as HTMLInputElement;
   expect([slider.min, slider.max, slider.step]).toEqual(["5", "60", "5"]);
   fireEvent.change(slider, { target: { value: "30" } });
   expect(screen.getByText("30분 쉬기")).toBeTruthy();
-  await waitFor(() => expect((pause as HTMLButtonElement).disabled).toBe(false));
   const before = Date.now();
-  fireEvent.click(pause);
+  fireEvent.click(screen.getByRole("button", { name: "쉬기 시작" }));
   await waitFor(() => expect(sessionStore.getSnapshot().session.paused).toBe(true));
   await waitFor(() => expect(readBreakUntil()).not.toBeNull());
   const until = readBreakUntil()!;

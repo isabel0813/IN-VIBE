@@ -86,6 +86,7 @@ describe("Annyong widget preview behavior", () => {
     clickPet();
     expect(screen.getByText("진짜 선택된 과제")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "일시정지" }));
+    fireEvent.click(screen.getByRole("button", { name: "쉬기 시작" }));
     const resume = await screen.findByRole("button", {
       name: "재개",
     });

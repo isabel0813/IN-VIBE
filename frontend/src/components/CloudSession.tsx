@@ -102,11 +102,20 @@ export function UltimateOverlay({ onEnd }: { onEnd?: () => void } = {}) {
 }
 // Exactly one controller lives in the main window. Widget views only subscribe
 // with useCloudSession/useFocusSession and never create another server session.
+const CONSENT_KEY = "mobonyong.ai-consent";
+function readConsent(): boolean {
+  try { return localStorage.getItem(CONSENT_KEY) === "1"; } catch { return false; }
+}
+function writeConsent(value: boolean) {
+  try { if (value) localStorage.setItem(CONSENT_KEY, "1"); else localStorage.removeItem(CONSENT_KEY); } catch { /* 저장 못 해도 이번 실행 동안은 유지 */ }
+}
 export function useCloudController() {
   const value = useCloudSession();
   const { session, ready } = useFocusSession();
   const [task, setTask] = useState("");
-  const [consent, setConsent] = useState(false);
+  // AI 판단 동의는 한 번 하면 다음에 앱을 열어도 유지한다 (동의 여부만 저장, 개인정보 없음).
+  const [consent, setConsentState] = useState(readConsent);
+  const setConsent = (next: boolean) => { setConsentState(next); writeConsent(next); };
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const judgments = useRef(new Map<string, Judgment | null>());
