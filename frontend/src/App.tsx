@@ -87,7 +87,7 @@ export default function App() {
         <section className="menu-section">
           <h2>설치</h2>
           <a href="/install.html" target="_blank" rel="noreferrer">Windows·Chrome 설치 안내</a>
-          <a href="https://github.com/isabel0813/IN-VIBE/releases/download/v0.2.0-incamp-20261114/Mobonyong-Windows-MVP.zip">Windows 시험판 다운로드</a>
+          <a href="https://github.com/isabel0813/IN-VIBE/releases/download/v0.3.2-test-20261118/Mobonyong-Windows-v0.3.2-test-20261118.zip">Windows 시험판 다운로드</a>
         </section>
       </aside>
 

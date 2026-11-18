@@ -3,9 +3,12 @@ import { isDesktop } from "../desktop/bridge";
 import { activityApi, categoryLabels, useActivity } from "./bridge";
 import "./activity.css";
 import BrowserControls from "./BrowserControls";
+import { useFocusSession } from "../session/store";
+import { activityStatus } from "./pipelineStatus";
 
 export default function ActivityControls() {
   const { activity, error: syncError } = useActivity();
+  const { session, ready } = useFocusSession();
   const [consent, setConsent] = useState(false);
   const [related, setRelated] = useState("");
   const [suspect, setSuspect] = useState("");
@@ -24,7 +27,8 @@ export default function ActivityControls() {
     finally { setBusy(false); }
   }
   return <details className="activity-controls">
-    <summary>Windows 활동 감지 · {activity.consent ? activity.monitoring ? categoryLabels[activity.category] : "세션 대기" : "꺼짐"}</summary>
+    <summary>Windows 활동 감지 · {activityStatus(activity.consent, activity.monitoring, categoryLabels[activity.category], session, ready)}</summary>
+    {session.running && session.task && session.task.id >= 1_000_000_000_000 && <p>한 줄 집중 세션은 로컬 이탈 판단 대신 YouTube 관측과 별도 동의한 AI 판단을 사용해요. 아래 YouTube 연결 상태와 AI 동의를 각각 확인해 주세요.</p>}
     <p>동의한 집중 세션에서만 활성 창의 제목·프로세스와 유지 시간을 이 PC 메모리에서 확인해요. 키 입력과 화면은 수집하지 않고, 창 정보는 서버로 보내지 않아요. 앱을 닫으면 지워져요.</p>
     <label><input type="checkbox" checked={consent} onChange={e => { setConsent(e.target.checked); if (!e.target.checked && activity.consent) void configure(false); }} /> 위 내용을 이해했으며 로컬 활동 감지에 동의합니다</label>
     <div className="activity-fields">

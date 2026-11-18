@@ -13,7 +13,7 @@ dependencies = [
 
 [[package]]
 name = "in-vibe-native-host"
-version = "0.1.0"
+version = "0.3.2"
 dependencies = [
  "annyong-native-protocol",
  "serde_json",

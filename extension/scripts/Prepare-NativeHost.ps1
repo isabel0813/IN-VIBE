@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([ValidatePattern('^[a-p]{32}$')][string]$ExtensionId)
+param([ValidatePattern('^[a-p]{32}$')][string]$ExtensionId='nndjojfhmpbolfifcfdcpalcloanppod')
 $ErrorActionPreference = 'Stop'
 $extensionRoot = Split-Path $PSScriptRoot -Parent
 $repoRoot = Split-Path $extensionRoot -Parent

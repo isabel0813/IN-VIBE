@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "안뇽이 · YouTube 공부 확인",
-  "version": "0.3.0",
+  "version": "0.3.2",
   "description": "동의한 집중 세션에서 선택된 YouTube 영상의 제목과 재생 상태만 로컬 안뇽이에 전달합니다.",
   "minimum_chrome_version": "105",
   "permissions": [
