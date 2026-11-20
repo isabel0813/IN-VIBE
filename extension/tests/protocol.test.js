@@ -1,15 +1,38 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { createContext, runInContext } from 'node:vm';
 import { validateObservation, youtubeUrl, validStatus } from '../protocol.js';
 import '../observer.js';
 const id = 'a'.repeat(32), url = 'https://www.youtube.com/watch?v=abcdefghijk';
 const pending = { nonce:'nonce',tabId:1,windowId:2,url };
 const sender = { id,frameId:0,tab:{id:1,windowId:2},url };
 const message = { type:'observation',nonce:'nonce',payload:{kind:'watch',videoId:'abcdefghijk',title:'게임 플레이',playing:true} };
+test('declarative and recovery injections share one observation listener', async () => {
+  const listeners = [];
+  const source = await readFile(new URL('../content.js', import.meta.url), 'utf8');
+  const context = createContext({
+    performance: { now: () => 0 },
+    window: { addEventListener() {} },
+    document: { addEventListener() {} },
+    chrome: { runtime: { onMessage: { addListener: listener => listeners.push(listener) } } },
+  });
+  runInContext(source, context);
+  runInContext(source, context);
+  assert.equal(listeners.length, 1);
+});
 test('accepts only top-level selected YouTube challenge responses', () => {
   assert.deepEqual(validateObservation(message,sender,id,pending), message.payload);
   for (const change of [{id:'b'.repeat(32)},{frameId:1},{url:'https://evil.test/watch?v=abcdefghijk'},{tab:{id:8,windowId:2}}]) assert.equal(validateObservation(message,{...sender,...change},id,pending),null);
   assert.equal(validateObservation({...message,nonce:'old'},sender,id,pending),null);
+});
+test('binds playback to the current challenge URL after YouTube SPA navigation', () => {
+  const previousUrl = 'https://www.youtube.com/watch?v=zyxwvutsrqp';
+  const spaSender = { ...sender, url: previousUrl };
+  assert.deepEqual(validateObservation(message, spaSender, id, pending), message.payload);
+  const stale = { ...message, payload: { ...message.payload, videoId: 'zyxwvutsrqp' } };
+  assert.equal(validateObservation(stale, spaSender, id, pending), null);
+  assert.equal(validateObservation(message, spaSender, id, { ...pending, url: 'https://www.youtube.com/' }), null);
 });
 test('rejects length, unexpected fields and video URL mismatches', () => {
   for (const change of [{title:'x'.repeat(401)},{title:'a\nb'},{videoId:'zyxwvutsrqp'},{playing:'true'},{body:'private'}]) assert.equal(validateObservation({...message,payload:{...message.payload,...change}},sender,id,pending),null);

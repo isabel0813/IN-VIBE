@@ -6,7 +6,7 @@
 
 source build는 `Prepare-NativeHost.ps1 -ExtensionId <실제 ID>`로 준비합니다. 이 개발용 스크립트는 소스 폴더의 `.local`에 빌드 결과를 준비할 뿐 레지스트리를 바꾸지 않습니다. 일반 사용자는 ZIP의 빌드된 Host를 사용하세요.
 
-권한은 YouTube host, nativeMessaging, storage로 제한합니다. 전체 방문 이력·키 입력·화면 캡처·영상 본문·자막·계정 정보를 읽지 않습니다. 로컬 동의와 집중 세션이 있어야 관측하며, AI 서버 전송은 별도 동의입니다. 개인 영상 정보는 확장 storage에 저장하지 않고 관측 스위치만 저장합니다. 같은 영상의 반복 질문 억제와 관측 상태는 세션 메모리에서 처리합니다.
+권한은 YouTube host, nativeMessaging, scripting, storage로 제한합니다. scripting은 이미 열려 있는 YouTube 탭의 최상위 프레임에 관측 스크립트가 없을 때 복구하는 데 사용합니다. 전체 방문 이력·키 입력·화면 캡처·영상 본문·자막·계정 정보를 읽지 않습니다. 로컬 동의와 집중 세션이 있어야 관측하며, AI 서버 전송은 별도 동의입니다. 개인 영상 정보는 확장 storage에 저장하지 않고 관측 스위치만 저장합니다. 같은 영상의 반복 질문 억제와 관측 상태는 세션 메모리에서 처리합니다.
 
 프로토콜 version 1에서 heartbeat/clear/observation/snapshot을 사용합니다. 메시지 최대 8192바이트, 영상 최대 4개, 제목 최대 400자입니다. nonce·선택 탭·창 최소화·재생 상태·세대/순번·유효기간을 검사합니다. 구버전 Host는 같은 version 1이어도 snapshot을 지원하지 않을 수 있으므로 HOST-BUILD.json 및 SHA256이 일치하는 동봉 Host를 사용하세요.
 

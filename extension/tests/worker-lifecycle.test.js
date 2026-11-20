@@ -7,7 +7,7 @@ const event = () => ({
   emit(...args) { for (const fn of this.listeners) fn(...args); },
 });
 let instance = 0;
-async function harness(run) {
+async function harness(run, setup = () => {}) {
   const originalInterval = globalThis.setInterval;
   const originalNow = Date.now;
   const id = 'abcdefghijklmnopabcdefghijklmnop';
@@ -57,6 +57,7 @@ async function harness(run) {
   globalThis.setInterval = fn => { tick = fn; return 0; };
   Date.now = () => state.clock;
   try {
+    setup(state);
     await import(`../worker.js?lifecycle=${++instance}`);
     await flush();
     await run(state);
@@ -68,6 +69,47 @@ async function harness(run) {
     delete globalThis.chrome;
   }
 }
+
+test('restores the missing top-frame listener once and accepts playback in an already-open tab', async () => {
+  const attempts = [];
+  const injections = [];
+  await harness(async state => {
+    assert.deepEqual(injections, [{ target: { tabId: state.tab.id, frameIds: [0] }, files: ['observer.js', 'content.js'] }]);
+    assert.equal(attempts.length, 2);
+    assert.deepEqual(attempts[0], attempts[1]);
+    assert.equal((await state.reply()).ok, true);
+    await state.flush();
+    assert.equal(state.snapshots().at(-1).observations.length, 1);
+  }, ({ chrome, challenges }) => {
+    chrome.scripting = { executeScript: async options => { injections.push(options); } };
+    chrome.tabs.sendMessage = async (tabId, message, options) => {
+      attempts.push({ tabId, message, options });
+      challenges.push(message);
+      if (attempts.length === 1) throw new Error('Could not establish connection. Receiving end does not exist.');
+      return { ok: true };
+    };
+  });
+});
+
+test('does not inject on a content script error or after navigation cancels the challenge', async () => {
+  for (const cancelled of [false, true]) {
+    let attempts = 0;
+    let injections = 0;
+    await harness(async state => {
+      assert.equal(attempts, 1);
+      assert.equal(injections, 0);
+      if (!cancelled) assert.deepEqual(state.snapshots().at(-1).observations, []);
+    }, ({ chrome, tab }) => {
+      chrome.scripting = { executeScript: async () => { injections++; } };
+      chrome.tabs.sendMessage = async () => {
+        attempts++;
+        if (!cancelled) throw new Error('Content Script exception');
+        chrome.tabs.onUpdated.emit(tab.id, { status: 'loading' });
+        throw new Error('Could not establish connection. Receiving end does not exist.');
+      };
+    });
+  }
+});
 
 test('rejects a response when its tab moved to a different minimized window during the challenge', async () => {
   await harness(async state => {

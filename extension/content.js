@@ -1,4 +1,6 @@
 (() => {
+  // Recovery can race the manifest's document_idle injection in a new tab.
+  if (globalThis.AnnyongContentListening) return;
   let changedAt = performance.now();
   let previous = "";
   const reset = () => { changedAt = performance.now(); previous = ""; };
@@ -14,4 +16,5 @@
     void chrome.runtime.sendMessage({ type: "observation", nonce: message.nonce, payload }).catch(() => {});
     reply({ ok: true });
   });
+  globalThis.AnnyongContentListening = true;
 })();

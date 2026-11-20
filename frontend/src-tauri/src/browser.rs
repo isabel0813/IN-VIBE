@@ -231,10 +231,10 @@ impl Browser {
                 self.discontinuous = true;
                 self.latest = None;
                 self.consumed = None;
+                self.view.observing = false;
             }
             self.snapshot = true;
             self.candidates = m.observations.iter().cloned().map(|o| (o, now)).collect();
-            self.view.observing = false;
         } else if m.kind == "observation" && m.generation == self.generation {
             self.snapshot = false;
             if m.observation
@@ -610,6 +610,31 @@ mod tests {
         assert!(b.visible_videos(5001, &titles).is_empty());
         b.disconnect();
         assert!(b.visible_videos(2100, &titles).is_empty());
+    }
+    #[test]
+    fn a_new_snapshot_keeps_the_current_playing_video_observable_between_native_polls() {
+        let mut browser = Browser::default();
+        browser.view.consent = true;
+        let mut snapshot = message(browser.generation, true);
+        snapshot.kind = "snapshot".into();
+        snapshot.observations = vec![snapshot.observation.take().unwrap()];
+        let title = "게임 플레이 - YouTube".to_string();
+        let foreground = Sample {
+            process: "chrome.exe".into(),
+            title: title.clone(),
+            idle: false,
+        };
+
+        browser.accept(&snapshot, 1000, true);
+        browser.choose_visible(&foreground, "공부", 1000, &[title]);
+        assert!(browser.status(1000, true).observing);
+
+        browser.accept(&snapshot, 1100, true);
+        assert!(browser.status(1100, true).observing);
+
+        snapshot.observations.clear();
+        browser.accept(&snapshot, 1200, true);
+        assert!(!browser.status(1200, true).observing);
     }
     #[test]
     fn pause_between_native_polls_breaks_continuity() {

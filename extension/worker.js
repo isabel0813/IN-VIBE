@@ -31,13 +31,35 @@ function connect() {
     current.onDisconnect.addListener(() => { void chrome.runtime.lastError; if (port === current) disconnect(); });
   } catch { disconnect(); }
 }
+async function stillEligible(challenge) {
+  const tab = await chrome.tabs.get(challenge.tabId);
+  const window = await chrome.windows.get(challenge.windowId);
+  return enabled && status.collecting && epoch === challenge.epoch && tab.active && tab.windowId === challenge.windowId && tab.url === challenge.url && window.state !== "minimized";
+}
+async function sendChallenge(challenge) {
+  const { nonce, tabId } = challenge;
+  const message = { type: "observe", nonce };
+  try {
+    await chrome.tabs.sendMessage(tabId, message, { frameId: 0 });
+  } catch (error) {
+    if (error?.message !== "Could not establish connection. Receiving end does not exist.") throw error;
+    // Existing documents may lack a listener after the extension reloads.
+    if (!pending.has(nonce) || !await stillEligible(challenge) || !pending.has(nonce)) {
+      challenge.finish(null);
+      return;
+    }
+    await chrome.scripting.executeScript({ target: { tabId, frameIds: [0] }, files: ["observer.js", "content.js"] });
+    if (pending.has(nonce)) await chrome.tabs.sendMessage(tabId, message, { frameId: 0 });
+  }
+}
 function observe(tab, stamp) {
   return new Promise(resolve => {
     const nonce = crypto.randomUUID();
     const timer = setTimeout(() => finish(null), 1800);
     function finish(value) { clearTimeout(timer); pending.delete(nonce); resolve(value); }
-    pending.set(nonce, { nonce, tabId: tab.id, windowId: tab.windowId, url: tab.url, epoch: stamp, finish });
-    void chrome.tabs.sendMessage(tab.id, { type: "observe", nonce }, { frameId: 0 }).catch(() => finish(null));
+    const challenge = { nonce, tabId: tab.id, windowId: tab.windowId, url: tab.url, epoch: stamp, finish };
+    pending.set(nonce, challenge);
+    void sendChallenge(challenge).catch(() => finish(null));
   });
 }
 async function tick() {
@@ -77,9 +99,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     if (!observation) { reply({ ok: false }); return; }
     pending.delete(challenge.nonce); // consume before async validation, rejecting replay
     try {
-      const tab = await chrome.tabs.get(challenge.tabId);
-      const window = await chrome.windows.get(challenge.windowId);
-      const valid = enabled && status.collecting && epoch === challenge.epoch && tab.active && tab.windowId === challenge.windowId && tab.url === challenge.url && window.state !== "minimized";
+      const valid = await stillEligible(challenge);
       challenge.finish(valid ? observation : null); reply({ ok: valid });
     } catch { challenge.finish(null); reply({ ok: false }); }
   })().catch(() => { clear(); reply({ ok: false }); });
