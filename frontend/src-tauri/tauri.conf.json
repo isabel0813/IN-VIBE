@@ -49,6 +49,12 @@
     "active": true,
     "useLocalToolsDir": true,
     "targets": ["nsis"],
-    "icon": ["icons/icon.png", "icons/icon.ico"]
+    "icon": ["icons/icon.png", "icons/icon.ico"],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerHooks": "./windows/native-host-hooks.nsh"
+      }
+    }
   }
 }

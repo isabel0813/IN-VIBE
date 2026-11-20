@@ -1,6 +1,6 @@
 // Use a normal Rust installation, or the checkout-local QA toolchain if present.
 // This helper never downloads tools or changes the system environment.
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
@@ -20,6 +20,19 @@ if (existsSync(localBin)) {
   env[pathKey] = join(localCargo, "bin") + delimiter + (env[pathKey] || "");
 }
 const [action, ...args] = process.argv.slice(2);
+// NSIS embeds the prepared, checksum-verified host at installer build time.
+// If preparation fails, fail the build rather than shipping an installer without it.
+if (process.platform === "win32" && action === "build") {
+  const prep = spawnSync(process.execPath, [join(root, "scripts", "prepare-installer-host.mjs")], {
+    cwd: root,
+    env,
+    stdio: "inherit",
+  });
+  if (prep.error || prep.status !== 0) {
+    console.error("Native Host installer payload preparation failed.", prep.error || prep.status);
+    process.exit(1);
+  }
+}
 const hostAction = action?.startsWith("host:");
 const cargoAction = hostAction || action === "check" || action === "test" || action === "fmt";
 const executable = cargoAction

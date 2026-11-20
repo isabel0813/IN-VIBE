@@ -2,7 +2,10 @@
 param(
   [ValidatePattern('^[a-p]{32}$')][string]$ExtensionId='nndjojfhmpbolfifcfdcpalcloanppod',
   [string]$InstallRoot=(Join-Path $env:LOCALAPPDATA 'Mobonyong/NativeHost'),
-  [switch]$Register
+  [switch]$Register,
+  [string]$ExpectedManifestPath,
+  [string]$ExpectedManifestSha256,
+  [switch]$RepairMissingHost
 )
 $ErrorActionPreference='Stop'
 function Get-HostHash([string]$FilePath) {
@@ -23,6 +26,7 @@ $hostPath=Join-Path $destination 'in-vibe-native-host.exe'
 $manifestPath=Join-Path $destination 'io.invibe.annyong.youtube.json'
 $registry='HKCU:\Software\Google\Chrome\NativeMessagingHosts\io.invibe.annyong.youtube'
 $old=if(Test-Path -LiteralPath $registry){(Get-Item -LiteralPath $registry).GetValue('')}else{$null}
+$guarded=$PSBoundParameters.ContainsKey('ExpectedManifestPath')
 $manifest=[ordered]@{name='io.invibe.annyong.youtube';description='Mobonyong YouTube observer';path=$hostPath;type='stdio';allowed_origins=@("chrome-extension://$ExtensionId/")}
 Write-Output "Existing registration: $old"
 Write-Output "Fixed Host path: $hostPath"
@@ -31,10 +35,21 @@ Write-Output "Exact allowed origin: $($manifest.allowed_origins[0])"
 Write-Output "Source: $($build.source_commit) / SHA256: $hash"
 if(-not $Register){Write-Output 'Preview only. No files or registry changed. Review, then explicitly pass -Register.';return}
 if(-not $PSCmdlet.ShouldProcess($registry,'Install verified Host at a fixed path, back up old registration and register for current user')){return}
+function Assert-RegistrationUnchanged {
+  $current=if(Test-Path -LiteralPath $registry){(Get-Item -LiteralPath $registry).GetValue('')}else{$null}
+  if($current -ne $old -or ($guarded -and (
+      [string]$current -ne $ExpectedManifestPath -or
+      ($current -and (Get-HostHash $current) -ne $ExpectedManifestSha256) -or
+      (!$current -and (Test-Path -LiteralPath $registry))
+    ))){throw 'Registration changed during preparation; stop and review.'}
+}
+Assert-RegistrationUnchanged
 # Version/hash/origin-specific directories never replace running EXEs.
+$repair=$RepairMissingHost -and $guarded -and $old -eq $manifestPath -and -not (Test-Path -LiteralPath $hostPath)
 if(Test-Path -LiteralPath $destination){
-  if(-not (Test-Path -LiteralPath $hostPath) -or -not (Test-Path -LiteralPath $manifestPath)){throw 'Incomplete destination; refusing to overwrite.'}
-  if((Get-HostHash $hostPath) -ne $hash){throw 'Existing destination has different content.'}
+  if((-not $repair -and -not (Test-Path -LiteralPath $hostPath -PathType Leaf)) -or
+      -not (Test-Path -LiteralPath $manifestPath -PathType Leaf)){throw 'Incomplete destination; refusing to overwrite.'}
+  if(-not $repair -and (Get-HostHash $hostPath) -ne $hash){throw 'Existing destination has different content.'}
   $existing=Get-Content -LiteralPath $manifestPath -Raw|ConvertFrom-Json
   if($existing.name -ne $manifest.name -or $existing.type -ne 'stdio' -or $existing.path -ne $hostPath -or $existing.allowed_origins.Count -ne 1 -or $existing.allowed_origins[0] -ne $manifest.allowed_origins[0]){throw 'Existing manifest differs; refusing to overwrite.'}
 }
@@ -46,14 +61,20 @@ if($old){
   if(Test-Path -LiteralPath $old -PathType Leaf){Copy-Item -LiteralPath $old -Destination (Join-Path $backup 'previous-manifest.json')}
 }
 [IO.File]::WriteAllText((Join-Path $backup 'previous-registration.json'),(@{previous_manifest=$old;new_manifest=$manifestPath}|ConvertTo-Json),[Text.UTF8Encoding]::new($false))
+Assert-RegistrationUnchanged
 if(-not (Test-Path -LiteralPath $destination)){
   New-Item -ItemType Directory -Path $destination|Out-Null
   Copy-Item -LiteralPath $source -Destination $hostPath
   [IO.File]::WriteAllText($manifestPath,($manifest|ConvertTo-Json),[Text.UTF8Encoding]::new($false))
+} elseif($repair) {
+  # Promote a complete, checked copy without overwriting any EXE that may have appeared.
+  $repairCopy=Join-Path $backup 'verified-host.tmp'
+  Copy-Item -LiteralPath $source -Destination $repairCopy
+  if((Get-HostHash $repairCopy) -ne $hash){throw 'Repair payload verification failed.'}
+  [IO.File]::Move($repairCopy,$hostPath)
 }
 if((Get-HostHash $hostPath) -ne $hash){throw 'Copied Host verification failed; registration unchanged.'}
-$current=if(Test-Path -LiteralPath $registry){(Get-Item -LiteralPath $registry).GetValue('')}else{$null}
-if($current -ne $old){throw 'Registration changed during preparation; stop and review.'}
+Assert-RegistrationUnchanged
 & (Join-Path $PSScriptRoot 'Register-NativeHost.ps1') -ManifestPath $manifestPath -Apply
 if((Get-Item -LiteralPath $registry).GetValue('') -ne $manifestPath){throw 'Registration verification failed.'}
 Write-Output "Backup: $backup"

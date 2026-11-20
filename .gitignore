@@ -13,3 +13,6 @@ dist/
 .env
 .DS_Store
 .qa/
+
+# Built Native Host payload (created by frontend/scripts/prepare-installer-host.mjs)
+/frontend/src-tauri/windows/native-host-payload/
