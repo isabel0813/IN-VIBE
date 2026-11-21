@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta
 from io import BytesIO
 from urllib.error import HTTPError
@@ -88,6 +89,44 @@ def test_provider_400_becomes_safe_judge_502(tmp_path, monkeypatch, caplog):
         failed = [event for event in db.all_events(saved) if event["type"] == "judge_failed"]
         assert [event["payload"] for event in failed] == [{"session_id": session["id"]}]
         assert db.session_ai_calls(saved, session["id"]) == 0
+
+
+def test_judge_cache_still_works_after_reaching_session_limit(tmp_path, monkeypatch):
+    path = str(tmp_path / "judge-limit.db")
+    user = "synthetic-user"
+    monkeypatch.setattr(db, "DB_PATH", path)
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-test-key")
+    monkeypatch.setenv("JUDGE_MAX_PER_SESSION", "1")
+    provider_calls = 0
+
+    def reply(req, **kwargs):
+        nonlocal provider_calls
+        payload = json.loads(req.data)
+        provider_calls += 1
+        assert {"temperature", "top_p", "top_k"}.isdisjoint(payload)
+        result = json.dumps({"category": "other", "reason": "synthetic"})
+        return BytesIO(json.dumps({"content": [{"type": "text", "text": result}]}).encode())
+
+    monkeypatch.setattr(nlp.urllib.request, "urlopen", reply)
+    with TestClient(app, headers={"X-User-Id": user}) as client:
+        start = client.post("/sessions", json={"task": "synthetic focus task"})
+        assert start.is_success
+        session_id = start.json()["id"]
+        video = {"session_id": session_id, "title": "synthetic private title", "video_id": "testVideo01"}
+
+        first = client.post("/judge", json=video)
+        cached = client.post("/judge", json=video)
+        limited = client.post("/judge", json={**video, "video_id": "testVideo02"})
+
+    assert first.status_code == cached.status_code == 200
+    assert first.json()["cached"] is False
+    assert cached.json() == {**first.json(), "cached": True}
+    assert limited.status_code == 429
+    assert provider_calls == 1
+    with db.connect(path) as saved:
+        assert db.session_ai_calls(saved, session_id) == 1
+        assert video["title"] not in "\n".join(saved.iterdump())
 
 
 def test_session_and_judgment_roundtrip(conn):
