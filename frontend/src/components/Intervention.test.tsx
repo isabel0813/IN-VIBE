@@ -130,7 +130,7 @@ it("never escalates background or ignored videos and never judges without AI con
   mocks.videos = [{ title: "new gameplay", videoId: "123456789ab" }];
   await advance(600_000); expect(api.judge).toHaveBeenCalledTimes(1);
 });
-it("keeps per-video time separate and ignores sleep or duplicate observation IDs", () => {
+it("shares verified suspicious time across videos without counting sleep or simultaneous IDs twice", () => {
   const clock = new InterventionClock();
   for (let now = 0; now <= 30_000; now += 1000) clock.observe(["a", "a"], now);
   clock.pause(); clock.observe(["a"], 500_000);
@@ -138,8 +138,38 @@ it("keeps per-video time separate and ignores sleep or duplicate observation IDs
   for (let now = 501_000; now <= 529_000; now += 1000) clock.observe(["a"], now);
   expect(clock.stage("a")).toBe(0);
   clock.observe(["a", "b"], 530_000);
-  expect(clock.stage("a")).toBe(1); expect(clock.stage("b")).toBe(0);
+  expect(clock.stage("a")).toBe(1); expect(clock.stage("b")).toBe(1);
   clock.clear(); expect(clock.stage("a")).toBe(0);
+});
+it("retains suspicious time through an ad or video switch and resets on related playback", () => {
+  const clock = new InterventionClock();
+  for (let t = 0; t <= 40_000; t += 1000) clock.observe(["a"], t);
+  for (let t = 41_000; t < 85_000; t += 1000) clock.observe([], t);
+  for (let t = 85_000; t < 105_000; t += 1000) clock.observe(["b"], t);
+  expect(clock.stage("b")).toBe(0);
+  clock.observe(["b"], 105_000);
+  expect(clock.stage("b")).toBe(1);
+  for (let t = 106_000; t <= 346_000; t += 1000) clock.observe(["c"], t);
+  expect(clock.stage("c")).toBe(2);
+  for (let t = 347_000; t <= 647_000; t += 1000) clock.observe(["d"], t);
+  expect(clock.stage("d")).toBe(3);
+  clock.observe([], 648_000, true);
+  clock.observe(["d"], 649_000);
+  expect(clock.stage("d")).toBe(0);
+});
+it("opens the first question across two suspicious videos without crediting an intervening ad", async () => {
+  await start();
+  await advance(45_000);
+  mocks.videos = [];
+  await advance(60_000);
+  expect(cloudMemory.read()?.ask).toBeNull();
+  mocks.videos = [{ title: "Another unrelated game", videoId: "123456789ab" }];
+  await advance(10_000);
+  expect(cloudMemory.read()?.ask).toBeNull();
+  await advance(10_000);
+  expect(cloudMemory.read()?.stage).toBe(1);
+  expect(cloudMemory.read()?.ask?.video_id).toBe("123456789ab");
+  expect(api.judge).toHaveBeenCalledTimes(2);
 });
 it("waits for additional valid viewing after return and starts a fresh 1/5/10 cycle", () => {
   const clock = new InterventionClock();

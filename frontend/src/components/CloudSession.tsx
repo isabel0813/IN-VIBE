@@ -195,7 +195,6 @@ export function useCloudController(activity?: Activity) {
           }
         }
         const eligible = videos.filter(video => !backgroundVideo(video.title));
-        clock.current.observe(eligible.map(video => video.videoId), Date.now());
         for (const video of eligible) {
           const key = `${id}:${video.videoId}`;
           if (judgments.current.has(key)) continue;
@@ -211,10 +210,14 @@ export function useCloudController(activity?: Activity) {
           }).catch(e => { if (!cancelled) setError(`영상 판단 실패 · 자동 재시도 중지. ${String(e)}`); });
         }
         const current = read()!;
-        const asking = eligible.filter(video => {
+        const suspicious = eligible.filter(video => {
           const result = judgments.current.get(`${id}:${video.videoId}`);
-          return result && clock.current.stage(video.videoId) > 0 && shouldAsk({ title: video.title, video_id: video.videoId }, result);
+          return result && shouldAsk({ title: video.title, video_id: video.videoId }, result);
         });
+        const relatedPlaying = videos.some(video => backgroundVideo(video.title)
+          || judgments.current.get(`${id}:${video.videoId}`)?.action === "ignore");
+        clock.current.observe(suspicious.map(video => video.videoId), Date.now(), relatedPlaying);
+        const asking = suspicious.filter(video => clock.current.stage(video.videoId) > 0);
         asking.sort((a, b) => clock.current.stage(b.videoId) - clock.current.stage(a.videoId));
         const highest = asking[0] ? clock.current.stage(asking[0].videoId) : 0;
         const next = asking.find(video => video.videoId === current.ask?.video_id && clock.current.stage(video.videoId) === highest) ?? asking[0];

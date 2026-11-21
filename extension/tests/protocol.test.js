@@ -19,6 +19,11 @@ test('PiP-only probes accept only verified watch-page PiP and playing follows th
   const payload = AnnyongObserver.read(doc,url,true);
   assert.equal(payload.kind,'pip');
   assert.deepEqual(validateObservation({...message,payload},sender,id,check),payload);
+  for (const advertisementClass of ['ad-showing','ad-interrupting']) {
+    player.classList.contains = value => value === advertisementClass;
+    assert.equal(AnnyongObserver.read(doc,url,true).kind,'unavailable');
+  }
+  player.classList.contains = () => false;
   video.paused=true;
   assert.equal(AnnyongObserver.read(doc,url,true).playing,false);
   doc.pictureInPictureElement=null;

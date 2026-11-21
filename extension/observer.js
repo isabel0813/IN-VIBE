@@ -30,7 +30,8 @@
     const pageTitles = [pageTitle, pageTitle?.replace(/^\(\d+\)\s*/, '')].filter(Boolean);
     const title = normalize(titleElement?.textContent) || (pageTitles.includes(normalize(metadata)) ? normalize(metadata) : null);
     if (title && pageTitles.length && !pageTitles.includes(title)) return unavailable;
-    if (watch?.getAttribute('video-id') !== info.id || !video || !title || title.length > 400 || player.classList.contains('ad-showing')) return unavailable;
+    if (watch?.getAttribute('video-id') !== info.id || !video || !title || title.length > 400
+      || player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting')) return unavailable;
     return { kind: pip ? "pip" : "watch", videoId: info.id, title,
       playing: !video.paused && !video.ended && !video.seeking && video.readyState >= 3 && video.playbackRate > 0 };
   }
