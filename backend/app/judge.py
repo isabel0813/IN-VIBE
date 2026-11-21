@@ -66,6 +66,6 @@ def judge_title(task: str, title: str) -> dict:
     data = nlp._extract_json(nlp.call_llm(JUDGE_PROMPT, build_message(task, title)))
     category = str(data.get("category", "")).strip().lower()
     if category not in CATEGORIES:
-        raise nlp.ParseError(f"AI 판단 형식이 올바르지 않아요: {category or '빈 값'}")
+        raise nlp.ParseError("AI 판단 형식이 올바르지 않아요")
     reason = str(data.get("reason") or "")[:60]
     return {"category": category, "action": action_for(category), "reason": reason}

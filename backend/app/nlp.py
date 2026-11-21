@@ -56,6 +56,14 @@ class ParseError(RuntimeError):
     """모델 응답을 할 일로 바꾸지 못함."""
 
 
+class ProviderHTTPError(ParseError):
+    """외부 응답 본문 대신 HTTP 상태만 보존한다."""
+
+    def __init__(self, status: int):
+        self.status = status
+        super().__init__(f"AI 호출 실패 ({status})")
+
+
 def build_user_message(text: str, now: datetime) -> str:
     """작은 모델도 날짜를 틀리지 않게 오늘부터 7일치 날짜표를 같이 넘긴다."""
     names = {0: "오늘", 1: "내일", 2: "모레"}
@@ -90,10 +98,12 @@ def _post_json(url: str, payload: dict, headers: dict, timeout: int) -> dict:
         with urllib.request.urlopen(req, timeout=timeout, context=_ssl_context()) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
-        detail = e.read().decode("utf-8", "replace")[:300]
-        raise ParseError(f"AI 호출 실패 ({e.code}): {detail}") from e
-    except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
-        raise ParseError(f"AI 서버에 연결하지 못했어요: {e}") from e
+        e.close()
+        raise ProviderHTTPError(e.code) from None
+    except (urllib.error.URLError, TimeoutError, ConnectionError):
+        raise ParseError("AI 서버에 연결하지 못했어요") from None
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise ParseError("AI 서버 응답 형식이 올바르지 않아요") from None
 
 
 def _call_ollama(system: str, user_message: str) -> str:
@@ -121,12 +131,13 @@ def _call_anthropic(system: str, user_message: str) -> str:
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         raise NotConfigured("Claude API를 쓰려면 서버에 ANTHROPIC_API_KEY를 설정해야 해요")
+    # Sampling overrides are unsupported by Haiku 5.5 and some newer models.
+    # The Claude defaults work for both these models and older model overrides.
     data = _post_json(
         ANTHROPIC_URL,
         {
             "model": os.getenv("LLM_MODEL", DEFAULT_ANTHROPIC_MODEL),
             "max_tokens": 1024,
-            "temperature": 0,
             "system": system,
             "messages": [{"role": "user", "content": user_message}],
         },

@@ -97,6 +97,30 @@ def test_ollama_request_and_response(monkeypatch):
     assert sent["body"]["model"] == "qwen2.5:7b"
     assert sent["body"]["stream"] is False and sent["body"]["format"] == "json"
     assert sent["body"]["messages"][0] == {"role": "system", "content": "sys"}
+    assert sent["body"]["options"] == {"temperature": 0}
+
+
+@pytest.mark.parametrize(("override", "model"), [
+    (None, "claude-haiku-5-5"),
+    ("claude-haiku-5-5", "claude-haiku-5-5"),
+    ("claude-haiku-4-5-20251001", "claude-haiku-4-5-20251001"),
+])
+def test_anthropic_uses_model_sampling_defaults(monkeypatch, override, model):
+    def fake_urlopen(req, timeout, context=None):
+        payload = json.loads(req.data)
+        assert payload["model"] == model
+        assert {"temperature", "top_p", "top_k"}.isdisjoint(payload)
+        assert payload["max_tokens"] > 0
+        return FakeResp(json.dumps({"content": [{"type": "text", "text": "synthetic"}]}))
+
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-test-key")
+    if override is None:
+        monkeypatch.delenv("LLM_MODEL", raising=False)
+    else:
+        monkeypatch.setenv("LLM_MODEL", override)
+    monkeypatch.setattr(nlp.urllib.request, "urlopen", fake_urlopen)
+    assert nlp.call_llm("synthetic system", "synthetic message") == "synthetic"
 
 
 def test_ollama_not_running(monkeypatch):

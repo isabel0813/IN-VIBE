@@ -5,6 +5,7 @@ import csv
 import hmac
 import io
 import json
+import logging
 import os
 from datetime import datetime
 from typing import Iterator
@@ -18,6 +19,7 @@ from .schemas import (EventIn, JudgeFeedbackIn, JudgeIn, ParseIn, SessionEnd, Se
                       SettingsIn, TaskBatchCreate, TaskCreate, TaskUpdate, WastedIn)
 
 app = FastAPI(title="뭐보뇽 API", version="0.4.0")
+logger = logging.getLogger(__name__)
 
 origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["*"], allow_headers=["*"])
@@ -198,8 +200,10 @@ def judge_video(body: JudgeIn, user: str = Depends(get_user), conn=Depends(get_c
     except nlp.NotConfigured as e:
         raise HTTPException(503, str(e))
     except nlp.ParseError as e:
+        if isinstance(e, nlp.ProviderHTTPError):
+            logger.warning("Video judgment provider HTTP status: %d", e.status)
         db.log_event(conn, user, "judge_failed", None, {"session_id": s["id"]})
-        raise HTTPException(502, str(e))
+        raise HTTPException(502, "AI가 영상 판단을 완료하지 못했어요") from None
     db.save_judgment(conn, s["id"], key, result["category"], "ai", result["reason"],
                      count_ai_call=True)
     db.log_event(conn, user, "judge_requested", None,

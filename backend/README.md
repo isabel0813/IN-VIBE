@@ -12,8 +12,8 @@
 cd backend
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-python -m pytest -q                # 테스트 31개 통과 확인
+pip install -r requirements-test.txt
+python -m pytest -q
 uvicorn app.main:app --reload      # http://127.0.0.1:8000/docs 에서 바로 호출해 볼 수 있다
 ```
 
@@ -37,7 +37,7 @@ uvicorn app.main:app --reload
 - `DB_PATH`: 기본 `mobonyong.db`. Railway에서는 볼륨 경로(예: `/data/mobonyong.db`)로 설정
 - `CORS_ORIGINS`: 기본 `*`. 프론트 배포 후 그 주소로 바꾸기
 - `ANTHROPIC_API_KEY`: 자연어 등록에 필요
-- `LLM_MODEL`: 기본 `claude-haiku-5-5`
+- `LLM_MODEL`: 기본 `claude-haiku-5-5`. Claude의 샘플링 기본값을 사용하며 Haiku 5.5에서 지원하지 않는 `temperature`, `top_p`, `top_k`를 전송하지 않는다.
 - `LLM_PROVIDER`: `anthropic`(기본) 또는 `ollama`
 - `OLLAMA_URL`, `OLLAMA_MODEL`, `OLLAMA_TIMEOUT`: `LLM_PROVIDER=ollama`일 때만 사용 (기본 `http://localhost:11434`, `qwen2.5:7b`, 120초)
 - `JUDGE_MAX_PER_SESSION`: 세션 하나에서 AI 판단을 부를 수 있는 최대 횟수 (기본 120, 넘으면 429)
