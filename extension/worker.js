@@ -31,18 +31,19 @@ function connect() {
     current.onDisconnect.addListener(() => { void chrome.runtime.lastError; if (port === current) disconnect(); });
   } catch { disconnect(); }
 }
-async function stillEligible(challenge) {
+async function stillEligible(challenge, pip = false) {
   const tab = await chrome.tabs.get(challenge.tabId);
   const window = await chrome.windows.get(challenge.windowId);
-  return enabled && status.collecting && epoch === challenge.epoch && tab.active && tab.windowId === challenge.windowId && tab.url === challenge.url && window.state !== "minimized";
+  return enabled && status.collecting && epoch === challenge.epoch && tab.windowId === challenge.windowId && tab.url === challenge.url && (pip || (tab.active && window.state !== "minimized"));
 }
 async function sendChallenge(challenge) {
   const { nonce, tabId } = challenge;
-  const message = { type: "observe", nonce };
+  const message = challenge.pipOnly ? { type: "observe", nonce, pipOnly: true } : { type: "observe", nonce };
   try {
     await chrome.tabs.sendMessage(tabId, message, { frameId: 0 });
   } catch (error) {
     if (error?.message !== "Could not establish connection. Receiving end does not exist.") throw error;
+    if (challenge.pipOnly) { challenge.finish(null); return; }
     // Existing documents may lack a listener after the extension reloads.
     if (!pending.has(nonce) || !await stillEligible(challenge) || !pending.has(nonce)) {
       challenge.finish(null);
@@ -52,12 +53,12 @@ async function sendChallenge(challenge) {
     if (pending.has(nonce)) await chrome.tabs.sendMessage(tabId, message, { frameId: 0 });
   }
 }
-function observe(tab, stamp) {
+function observe(tab, stamp, pipOnly = false) {
   return new Promise(resolve => {
     const nonce = crypto.randomUUID();
     const timer = setTimeout(() => finish(null), 1800);
     function finish(value) { clearTimeout(timer); pending.delete(nonce); resolve(value); }
-    const challenge = { nonce, tabId: tab.id, windowId: tab.windowId, url: tab.url, epoch: stamp, finish };
+    const challenge = { nonce, tabId: tab.id, windowId: tab.windowId, url: tab.url, epoch: stamp, pipOnly, finish };
     pending.set(nonce, challenge);
     void sendChallenge(challenge).catch(() => finish(null));
   });
@@ -79,8 +80,20 @@ async function tick() {
     }
     if (stamp !== epoch) return;
     // Four windows keep worst-case UTF-8 frames below the native 8192-byte limit.
-    const observations = await Promise.all(eligible.slice(0, 4).map(tab => observe(tab, stamp)));
-    if (stamp === epoch && enabled && status.collecting) send("snapshot", { observations: observations.filter(o => o?.playing) });
+    const ordinary = eligible.slice(0, 4);
+    const ids = new Set(ordinary.map(tab => tab.id));
+    const pipCandidates = (await chrome.tabs.query({ url: "https://www.youtube.com/*" }))
+      .filter(tab => !ids.has(tab.id) && youtubeUrl(tab.url)?.pathname === "/watch").slice(0, 12);
+    if (stamp !== epoch) return;
+    const observations = await Promise.all([
+      ...ordinary.map(tab => observe(tab, stamp)),
+      ...pipCandidates.map(tab => observe(tab, stamp, true)),
+    ]);
+    const playing = observations.filter(o => o?.playing);
+    const pip = playing.find(o => o.kind === "pip");
+    if (stamp === epoch && enabled && status.collecting) send("snapshot", {
+      observations: (pip ? [pip, ...playing.filter(o => o.videoId !== pip.videoId)] : playing).slice(0, 4),
+    });
   } catch { clear(); }
   finally { reading = false; }
 }
@@ -99,7 +112,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     if (!observation) { reply({ ok: false }); return; }
     pending.delete(challenge.nonce); // consume before async validation, rejecting replay
     try {
-      const valid = await stillEligible(challenge);
+      const valid = await stillEligible(challenge, observation.kind === "pip");
       challenge.finish(valid ? observation : null); reply({ ok: valid });
     } catch { challenge.finish(null); reply({ ok: false }); }
   })().catch(() => { clear(); reply({ ok: false }); });

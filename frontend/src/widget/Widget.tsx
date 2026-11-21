@@ -10,12 +10,14 @@ import type { WidgetLayout } from "../desktop/bridge";
 import { sessionStore, useFocusSession } from "../session/store";
 import type { SessionAction } from "../session/model";
 import { characterArt, characterCopy } from "./character";
-import { previewPlacement } from "./geometry";
+import { bubblePlacement, previewPlacement } from "./geometry";
 import "./widget.css";
 import { activityApi, useActivity } from "../activity/bridge";
 import RecoveryFlow from "../activity/RecoveryFlow";
 import { CloudQuestion, useCloudSession } from "../components/CloudSession";
 import { cloudMemory } from "../components/cloudMemory";
+import { ReplyNotice, useReply } from "../components/persona";
+import InactivityQuestion from "../activity/InactivityQuestion";
 import Icon from "../components/Icon";
 import {
   BREAK_MAX,
@@ -49,12 +51,27 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
     moved: boolean;
   } | null>(null);
   const moved = useRef(false);
+  const lastPrompt = useRef<{ key: string; stage: number } | null>(null);
+  const windowActions = useRef(Promise.resolve());
   // 일시정지 쉬는 시간 (분). 일시정지 버튼에 마우스를 올리면 고른다.
   const [breakMinutes, setBreakMinutes] = useState(10);
   const [breakPickerOpen, setBreakPickerOpen] = useState(false);
   const [nextTask, setNextTask] = useState("");
   const breakRemaining = useBreakRemaining();
-  const copy = characterCopy[cloud?.ask ? "suspect" : session.character];
+  const reply = useReply();
+  const canIntervene = session.running && !session.paused && (!native || activity.consent);
+  const question = canIntervene ? cloud?.ask : null;
+  const incident = canIntervene && !question && activity.consent ? activity.incident : null;
+  const inactivityStage = incident?.kind === "inactivity" ? incident.stage : undefined;
+  const promptKey = question ? `youtube:${cloud?.id}:${question.video_id}`
+    : inactivityStage !== undefined ? `inactivity:${incident?.id}` : undefined;
+  const promptStage = question ? cloud?.stage ?? 1 : inactivityStage ?? 0;
+  const character = question || inactivityStage === 1 || inactivityStage === 2 ? "suspect" : session.character;
+  const copy = characterCopy[character];
+  const nudge = question ? (cloud?.stage === 2 ? "5분째다." : "목표 확인")
+    : inactivityStage === 2 ? "5분째 입력이 없어!"
+      : inactivityStage === 1 ? "혹시 딴짓 중이야?"
+        : incident?.kind !== "inactivity" && incident && character === "suspect" ? "잠깐, 확인!" : "";
   const preview = previewPlacement(
     position.x,
     position.y,
@@ -96,22 +113,43 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
   }, [native]);
 
   const bubble = useCallback(
-    async (open: boolean) => {
-      try {
-        if (native) await nativeWidget.bubble(open);
-        else setLayout((value) => ({ ...value, open }));
-      } catch (failure) {
-        setError(`말풍선을 바꾸지 못했어요. ${String(failure)}`);
+    (open: boolean, automatic = false) => {
+      if (!native) {
+        setLayout((value) => ({ ...value, open, automatic }));
+        return Promise.resolve();
       }
+      windowActions.current = windowActions.current.then(async () => {
+        await nativeWidget.bubble(open, automatic);
+      }).catch(failure => {
+        setError(`말풍선을 바꾸지 못했어요. ${String(failure)}`);
+      });
+      return windowActions.current;
     },
     [native],
   );
 
   useEffect(() => {
+    if (!ready || !windowReady) return;
+    const previous = lastPrompt.current;
+    lastPrompt.current = promptKey ? { key: promptKey, stage: promptStage } : null;
+    if (promptKey && promptStage !== 3) {
+      if (previous?.key !== promptKey || previous.stage === 3 || promptStage > previous.stage) {
+        void bubble(true, true);
+      }
+    } else if (reply && canIntervene && promptStage !== 3) {
+      if (!layout.open) void bubble(true, true);
+    } else if (layout.open && (promptStage === 3 || (layout.automatic
+      && (!canIntervene || session.character !== "recovery")))) {
+      void bubble(false);
+    }
+  }, [ready, windowReady, promptKey, promptStage, layout.open, layout.automatic, reply, canIntervene, session.character, bubble]);
+
+  useEffect(() => {
     if (!layout.open) return;
-    dialog.current?.focus({ preventScroll: true });
+    if (!layout.automatic) dialog.current?.focus({ preventScroll: true });
     const outside = (event: globalThis.PointerEvent) => {
       if (
+        !layout.automatic &&
         !dialog.current?.contains(event.target as Node) &&
         !pet.current?.contains(event.target as Node)
       )
@@ -127,13 +165,13 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
     document.addEventListener("pointerdown", outside);
     document.addEventListener("keydown", key);
     // Native external-click dismissal is handled by WindowEvent::Focused(false).
-    if (!native) window.addEventListener("blur", blur);
+    if (!native && !layout.automatic) window.addEventListener("blur", blur);
     return () => {
       document.removeEventListener("pointerdown", outside);
       document.removeEventListener("keydown", key);
       window.removeEventListener("blur", blur);
     };
-  }, [layout.open, native, bubble]);
+  }, [layout.open, layout.automatic, native, bubble]);
 
   useEffect(() => {
     if (native) return;
@@ -197,7 +235,7 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
     height: geometry.height,
     ...(native ? {} : { left: preview.left, top: preview.top }),
   };
-  const above = geometry.petY > (geometry.height - 80) / 2;
+  const placement = bubblePlacement(geometry);
 
   return (
     <div
@@ -212,13 +250,12 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
           tabIndex={-1}
           role="dialog"
           aria-label="안뇽이 말풍선"
-          className={`pet-bubble ${above ? "above" : "below"}`}
-          style={{
-            left: 8,
-            right: 8,
-            ...(above
-              ? { bottom: geometry.height - geometry.petY + 8 }
-              : { top: geometry.petY + 88 }),
+          className={`pet-bubble ${placement.above ? "above" : "below"}`}
+          style={placement.style}
+          onPointerDownCapture={event => {
+            if (event.button === 0 && native && layout.automatic) {
+              void nativeWidget.interact().catch(failure => setError(String(failure)));
+            }
           }}
         >
           <div className="pet-bubble-heading">
@@ -238,8 +275,12 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
               개발 시뮬레이션 · 실제 활동 감지 없음
             </p>
           )}
-          <RecoveryFlow incident={activity.incident} paused={session.paused || !session.running} />
-          <CloudQuestion />
+          {!question && incident?.kind === "inactivity" && inactivityStage !== 3 && <InactivityQuestion incident={incident} />}
+          {!question && incident?.kind !== "inactivity" && <RecoveryFlow key={session.task?.id}
+            incident={incident} paused={session.paused || !session.running || !activity.consent}
+            onLocalReturn={layout.automatic ? () => void bubble(false) : undefined} />}
+          {question && <CloudQuestion />}
+          {!question && !incident && reply && session.task && <ReplyNotice mode={reply.mode} task={session.task.name} />}
           {session.character === "checkin" && !activity.incident && session.simulated && (
             <div className="checkin-options">
               <button
@@ -267,7 +308,7 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
               딴짓 시간은 측정하지 않았어. 계획에는 반영하지 않을게.
             </p>
           )}
-          <form
+          {!layout.automatic && <><form
             className="pet-change-form"
             onSubmit={event => {
               event.preventDefault();
@@ -366,7 +407,7 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
                 종료
               </button>
             </div>
-          </div>
+          </div></>}
           {(error || syncError) && (
             <p className="pet-error" role="alert">
               {error || syncError}
@@ -375,7 +416,7 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
               </button>
             </p>
           )}
-          <div className="pet-footer">
+          {!layout.automatic && <div className="pet-footer">
             <button
               className="pet-open-main"
               aria-label="집중 화면 열기"
@@ -390,12 +431,12 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
             >
               <Icon name="window" />
             </button>
-          </div>
+          </div>}
         </div>
       )}
       <button
         ref={pet}
-        className={`pet-character state-${cloud?.ask ? "suspect" : session.character}`}
+        className={`pet-character state-${character}`}
         style={{ left: geometry.petX, top: geometry.petY }}
         aria-label={`안뇽이: ${copy.label}. 클릭하면 말풍선, 드래그하면 이동`}
         aria-expanded={layout.open}
@@ -418,8 +459,8 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
             moved.current = false;
             return;
           }
-          if (!layout.open && activity.incident && !activity.incident.claimed) {
-            const id = activity.incident.id;
+          if (!layout.open && incident && !incident.claimed) {
+            const id = incident.id;
             void run(async () => {
               await activityApi.respond(id, "review");
               await bubble(true);
@@ -427,9 +468,9 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
           } else void bubble(!layout.open);
         }}
       >
-        <img draggable={false} src={characterArt[session.character]} alt="" />
+        <img draggable={false} src={characterArt[character]} alt="" />
         <span className="pet-state-dot" aria-hidden="true" />
-        {!layout.open && !session.paused && (cloud?.ask || (session.character === "suspect" && activity.incident)) && <span className="pet-nudge">{cloud?.stage === 2 ? "아직 보고 있뇽?" : "잠깐, 확인!"}</span>}
+        {!layout.open && !session.paused && nudge && <span className="pet-nudge">{nudge}</span>}
       </button>
       {!layout.open && (error || syncError) && (
         <button

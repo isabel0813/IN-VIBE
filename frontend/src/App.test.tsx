@@ -36,6 +36,16 @@ async function start() {
 }
 
 describe("C landing one-line focus flow", () => {
+  it("persists the opt-in tone across app remounts", () => {
+    const view = render(<App />);
+    openSettings();
+    fireEvent.click(screen.getByRole("radio", { name: /하드코어/ }));
+    expect(localStorage.getItem("mobonyong.tone")).toBe("hardcore");
+    view.unmount();
+    render(<App />);
+    openSettings();
+    expect(screen.getByRole<HTMLInputElement>("radio", { name: /하드코어/ }).checked).toBe(true);
+  });
   it("opens the clean menu without exposing planner actions or making API requests", () => {
     render(<App />);
     fireEvent.click(screen.getByRole("button", { name: "메뉴 열기" }));
@@ -50,7 +60,7 @@ describe("C landing one-line focus flow", () => {
   it("starts without task/plan/settings queries or AI parsing and without consent", async () => {
     const widget = vi.spyOn(desktop, "showWidget");
     render(<App />);
-    expect(screen.getByRole("heading", { name: "오늘은 뭘 해야 하뇽?" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "오늘 끝낼 일은?" })).toBeTruthy();
     expect(screen.getByText("자세히 적을수록 안뇽이가 더 잘 알아볼 수 있어!")).toBeTruthy();
     expect(screen.getByPlaceholderText("예: 물리학2 패러데이 법칙 공부하기")).toBeTruthy();
     expect((screen.getByLabelText("지금 공부할 일") as HTMLInputElement).type).toBe("text");

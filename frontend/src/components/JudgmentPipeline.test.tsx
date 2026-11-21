@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Incident } from "../activity/bridge";
 vi.mock("./intervention", async original => ({
   ...await original<typeof import("./intervention")>(),
   escalation: { firstMs: 0, secondMs: 300_000, ultimateMs: 600_000 },
@@ -8,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   session: { running: false, paused: false, task: null as null | { id: number; name: string }, character: "idle", simulated: false },
   invoke: vi.fn(), show: vi.fn(), send: vi.fn(),
   native: { consent: true, collecting: true },
+  incident: null as Incident | null,
 }));
 vi.mock("../desktop/bridge", async importOriginal => ({
   ...await importOriginal<typeof import("../desktop/bridge")>(),
@@ -20,7 +22,7 @@ vi.mock("../session/store", () => ({
   sessionStore: { send: mocks.send },
 }));
 vi.mock("../activity/bridge", () => ({
-  useActivity: () => ({ activity: { consent: false, incident: null } }), activityApi: {},
+  useActivity: () => ({ activity: { consent: true, incident: mocks.incident } }), activityApi: {},
 }));
 import CloudSession from "./CloudSession";
 import Widget from "../widget/Widget";
@@ -35,6 +37,7 @@ beforeEach(() => {
   localStorage.clear();
   requests = [];
   mocks.native = { consent: true, collecting: true };
+  mocks.incident = null;
   mocks.session = { running: false, paused: false, task: null, character: "idle", simulated: false };
   mocks.send.mockImplementation(async action => {
     mocks.session = { ...mocks.session, running: action.type === "start", paused: false,
@@ -60,13 +63,24 @@ async function start(widget = false) {
   fireEvent.click(screen.getByRole("checkbox"));
   fireEvent.click(screen.getByRole("button", { name: "집중 시작" }));
   await waitFor(() => expect(mocks.show).toHaveBeenCalledWith(true));
+  await sample();
   return view;
 }
 
 describe("synthetic judgment pipeline", () => {
+  it("shows only the YouTube question when an inactivity incident reaches the widget concurrently", async () => {
+    mocks.incident = { id: 42, kind: "inactivity", stage: 1, startedAt: 0, seconds: 60, process: "", title: "", claimed: false };
+    await start(true);
+    await sample();
+    expect(screen.queryByText("혹시 딴짓 중이야?")).toBeNull();
+    const dialog = await screen.findByRole("dialog", { name: "안뇽이 말풍선" });
+    await within(dialog).findByText(game.title);
+    expect(within(dialog).getByText(game.title)).toBeTruthy();
+    expect(within(dialog).queryByLabelText("무입력 확인")).toBeNull();
+  });
   it.each(["consent", "collecting"] as const)("clears raw observations after native %s is withdrawn", async field => {
     await start();
-    await screen.findByText("안뇽이 · 너 혹시 딴짓해?");
+    await screen.findByLabelText("YouTube 활동 확인");
     mocks.native = { ...mocks.native, [field]: false };
     await sample();
     expect(cloudMemory.read()).toMatchObject({ ask: null, reason: "" });
@@ -91,16 +105,16 @@ describe("synthetic judgment pipeline", () => {
   });
   it("blocks feedback queued before native consent withdrawal", async () => {
     await start();
-    await screen.findByText("안뇽이 · 너 혹시 딴짓해?");
+    await screen.findByLabelText("YouTube 활동 확인");
     mocks.native = { consent: false, collecting: false };
-    fireEvent.click(screen.getByRole("button", { name: "아니? 전혀~" }));
+    fireEvent.click(screen.getByRole("button", { name: "공부 중인데?" }));
     await sample();
     expect(requests.filter(request => request.path === "/judge/feedback")).toHaveLength(0);
     expect(cloudMemory.read()?.ask).toBeNull();
   });
   it("clears raw question and reason after AI revocation and clears all memory on end", async () => {
     await start();
-    await screen.findByText("안뇽이 · 너 혹시 딴짓해?");
+    await screen.findByLabelText("YouTube 활동 확인");
     fireEvent.click(screen.getByRole("checkbox"));
     expect(cloudMemory.read()).toMatchObject({ ask: null, reason: "" });
     fireEvent.click(screen.getByRole("button", { name: "세션 종료" }));
@@ -110,7 +124,7 @@ describe("synthetic judgment pipeline", () => {
   it("never persists observed video or session data in localStorage", async () => {
     const write = vi.spyOn(Storage.prototype, "setItem");
     await start();
-    await screen.findByText("안뇽이 · 너 혹시 딴짓해?");
+    await screen.findByLabelText("YouTube 활동 확인");
     const activityWrites = write.mock.calls.filter(([name]) => name.startsWith(key));
     expect(activityWrites).toHaveLength(0);
     write.mockRestore();
@@ -127,7 +141,7 @@ describe("synthetic judgment pipeline", () => {
     await start();
     await waitFor(() => expect(judging()).toHaveLength(1));
     await sample();
-    expect(!!screen.queryByText("안뇽이 · 너 혹시 딴짓해?")).toBe(asks);
+    expect(!!screen.queryByLabelText("YouTube 활동 확인")).toBe(asks);
     expect(judging()[0].body).toEqual({ session_id: 23, title, video_id: game.videoId });
   });
   it.each(["consent", "end"])("ignores an IPC observation resolving after %s", async stop => {
@@ -151,31 +165,31 @@ describe("synthetic judgment pipeline", () => {
     else fireEvent.click(screen.getByRole("button", { name: "세션 종료" }));
     await act(async () => finish(Response.json({ action: "ask", reason: "합성" })));
     await sample();
-    expect(screen.queryByText("안뇽이 · 너 혹시 딴짓해?")).toBeNull();
+    expect(screen.queryByLabelText("YouTube 활동 확인")).toBeNull();
     expect(judging()).toHaveLength(1);
     if (stop === "end") expect(localStorage.getItem(key)).toBeNull();
   });
   it("retains correction across video switches without another judgment for the corrected ID", async () => {
     await start();
-    await screen.findByText("안뇽이 · 너 혹시 딴짓해?");
-    fireEvent.click(screen.getByRole("button", { name: "아니? 전혀~" }));
-    await waitFor(() => expect(screen.queryByText("안뇽이 · 너 혹시 딴짓해?")).toBeNull());
+    await screen.findByLabelText("YouTube 활동 확인");
+    fireEvent.click(screen.getByRole("button", { name: "공부 중인데?" }));
+    await waitFor(() => expect(screen.queryByLabelText("YouTube 활동 확인")).toBeNull());
     mocks.invoke.mockResolvedValue([{ title: "다른 합성 영상", videoId: "zyxwvutsrqp" }]);
     await sample();
-    await screen.findByText("안뇽이 · 너 혹시 딴짓해?");
+    await screen.findByLabelText("YouTube 활동 확인");
     mocks.invoke.mockResolvedValue([game]);
     await sample();
-    expect(screen.queryByText("안뇽이 · 너 혹시 딴짓해?")).toBeNull();
+    expect(screen.queryByLabelText("YouTube 활동 확인")).toBeNull();
     expect(judging()).toHaveLength(2);
     const feedback = requests.filter(request => request.path === "/judge/feedback");
     expect(feedback).toEqual([{ path: "/judge/feedback", body: { session_id: 23, title: game.title, video_id: game.videoId } }]);
   });
   it("acknowledges distraction, keeps focus running, and suppresses a repeat for the same video", async () => {
     await start();
-    await screen.findByText("안뇽이 · 너 혹시 딴짓해?");
-    fireEvent.click(screen.getByRole("button", { name: "맞아, 공부로 돌아갈게" }));
+    await screen.findByLabelText("YouTube 활동 확인");
+    fireEvent.click(screen.getByRole("button", { name: "돌아갈게..." }));
     await sample(); await sample();
-    expect(screen.queryByText("안뇽이 · 너 혹시 딴짓해?")).toBeNull();
+    expect(screen.queryByLabelText("YouTube 활동 확인")).toBeNull();
     expect(mocks.session.running).toBe(true);
     expect(judging()).toHaveLength(1);
     expect(requests.some(request => request.path === "/plan/wasted")).toBe(false);
@@ -186,28 +200,28 @@ describe("synthetic judgment pipeline", () => {
     await start();
     await screen.findByRole("alert");
     await sample(); await sample();
-    expect(screen.queryByText("안뇽이 · 너 혹시 딴짓해?")).toBeNull();
+    expect(screen.queryByLabelText("YouTube 활동 확인")).toBeNull();
     expect(judging()).toHaveLength(1);
   });
   it("removes a question on AI consent revocation and sends no new video", async () => {
     await start();
-    await screen.findByText("안뇽이 · 너 혹시 딴짓해?");
+    await screen.findByLabelText("YouTube 활동 확인");
     fireEvent.click(screen.getByRole("checkbox"));
     mocks.invoke.mockResolvedValue([{ title: "동의 철회 후 합성 영상", videoId: "zyxwvutsrqp" }]);
     await sample();
-    expect(screen.queryByText("안뇽이 · 너 혹시 딴짓해?")).toBeNull();
+    expect(screen.queryByLabelText("YouTube 활동 확인")).toBeNull();
     expect(judging()).toHaveLength(1);
   });
-  it("updates the existing widget expression without automatically opening its bubble", async () => {
+  it("opens the YouTube bubble and submits correction directly without clicking the pet first", async () => {
     await start(true);
     await screen.findByRole("button", { name: /^안뇽이: 딴짓 의심/ });
-    expect(screen.queryByRole("dialog")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /^안뇽이:/ }));
-    const dialog = screen.getByRole("dialog", { name: "안뇽이 말풍선" });
+    const dialog = await screen.findByRole("dialog", { name: "안뇽이 말풍선" });
     expect(within(dialog).getByText("전자기 유도 공부")).toBeTruthy();
     expect(within(dialog).getByText(game.title)).toBeTruthy();
-    fireEvent.click(within(dialog).getByRole("button", { name: "아니? 전혀~" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "공부 중인데?" }));
     await screen.findByRole("button", { name: /^안뇽이: 집중 중/ });
     expect(screen.queryByText(game.title)).toBeNull();
+    await waitFor(() => expect(within(dialog).queryByRole("button", { name: "공부 중인데?" })).toBeNull());
+    expect(requests.filter(request => request.path === "/judge/feedback")).toHaveLength(1);
   });
 });

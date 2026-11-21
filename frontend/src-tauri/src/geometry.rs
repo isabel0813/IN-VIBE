@@ -8,6 +8,7 @@ pub const HEIGHT: f64 = 440.0;
 #[serde(rename_all = "camelCase")]
 pub struct Layout {
     pub open: bool,
+    pub automatic: bool,
     pub pet_x: f64,
     pub pet_y: f64,
     pub width: f64,
@@ -17,6 +18,7 @@ impl Default for Layout {
     fn default() -> Self {
         Self {
             open: false,
+            automatic: false,
             pet_x: 0.0,
             pet_y: 0.0,
             width: PET,
@@ -58,6 +60,7 @@ pub fn place(
         (x, y),
         Layout {
             open,
+            automatic: false,
             pet_x: (ax - x) / scale,
             pet_y: (ay - y) / scale,
             width: width / scale,

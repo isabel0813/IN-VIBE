@@ -36,7 +36,7 @@ export default function ActivityControls() {
       <label>이탈 의심 단어 (쉼표 구분)<input value={suspect} onChange={e => setSuspect(e.target.value)} placeholder="직접 지정한 게임·영상 제목" /></label>
       {import.meta.env.DEV && <label>개발 전용 확인 기준 (초)<input type="number" min={10} max={3600} value={seconds} onChange={e => setSeconds(Number(e.target.value))} /></label>}
     </div>
-    <p>기본 기준 5분 · 브라우저는 기본 미분류 · 60초 이상 입력이 없으면 유휴로 제외해요. 확장 프로그램으로 활성 YouTube 영상 재생이 확인되면 입력이 없어도 관측해요. 정상 공부라고 답하면 같은 영상 ID 또는 창 제목은 이번 세션에서 관련 활동으로 정정해요.</p>
+    <p>키보드나 마우스 입력이 없으면 1분, 5분, 10분에 확인해요. 표시 중인 YouTube 영상 재생이 확인되면 영상 관측을 우선해요. 정상 공부라고 답하면 같은 무입력 구간에는 다시 묻지 않아요.</p>
     <button disabled={!consent || busy} onClick={() => void configure(true)}>동의하고 감지 설정 적용</button>{" "}
     <button disabled={!activity.consent || busy} onClick={() => void configure(false)}>감지 중지 · 관측 정보 지우기</button>
     <BrowserControls activityConsent={activity.consent} />

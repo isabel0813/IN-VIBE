@@ -1662,43 +1662,109 @@ button.link:hover {
   font-weight: 600;
 }
 
-/* 10분 무응답: 무서운 안뇽이 */
 .ultimate-overlay {
   position: fixed;
   inset: 0;
   z-index: 100;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  padding: 24px;
-  background: #0d141ef2;
-  animation: ultimate-in 0.25s ease-out;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  justify-items: center;
+  gap: clamp(6px, 1.2vh, 16px);
+  padding: clamp(10px, 1.8vh, 24px) clamp(12px, 3vw, 48px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: radial-gradient(ellipse at 50% 30%, #d5d5d3 4%, #e6ebee 48%, #f4f8fb 78%);
+  color: #172b3b;
 }
-.ultimate-overlay img {
-  width: min(560px, 90vw);
-  max-height: 60vh;
-  object-fit: contain;
-  border-radius: 24px;
+.ultimate-visual {
+  container-type: size;
+  width: 100%;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+}
+.ultimate-art {
+  width: min(100%, calc(100cqh * 1024 / 765));
+  height: auto;
+  aspect-ratio: 1024 / 765;
+  mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent),
+    linear-gradient(to bottom, transparent, black 4%, black 96%, transparent);
+  mask-composite: intersect;
+  pointer-events: none;
 }
 .ultimate-card {
-  width: min(560px, 90vw);
-  padding: 20px;
+  box-sizing: border-box;
+  width: min(100%, 960px);
+  max-height: 52vh;
+  overflow: auto;
+  padding: clamp(10px, 1.8vh, 20px) clamp(12px, 3vw, 28px);
+  border: 1px solid var(--line);
   border-radius: 20px;
-  background: #ffffff;
+  background: var(--panel);
+  box-shadow: 0 12px 28px #29475f1c;
   text-align: center;
 }
-.ultimate-card strong {
-  font-size: 20px;
+.ultimate-card h1 {
+  margin: 0 0 6px;
+  color: #172b3b;
+  font-size: clamp(20px, 3.5vw, 36px);
+  line-height: 1.16;
 }
 .ultimate-card p {
-  margin-top: 6px;
-  color: #4d6d85;
+  margin: 4px 0;
+  color: var(--muted);
   font-size: 13px;
+  overflow-wrap: anywhere;
 }
-.ultimate-card .cloud-question-actions {
+.ultimate-card .ultimate-video {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.ultimate-card .cloud-question-actions,
+.ultimate-card .recovery-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   justify-content: center;
+}
+.ultimate-card .recovery-flow > :is(strong, p, label) { flex-basis: 100%; }
+.ultimate-card :is(.cloud-question-actions, .recovery-flow) button {
+  width: auto;
+  min-height: 40px;
+  margin: 0;
+  padding: 8px 14px;
+  border: 1px solid #8dbbdc;
+  border-radius: 999px;
+  background: #2b3a52;
+  color: white;
+  font: 600 16px/1.35 "Segoe UI", "Malgun Gothic", sans-serif;
+}
+.ultimate-card :is(.cloud-question-actions, .recovery-flow) button:not(:first-of-type),
+.ultimate-card .text-button {
+  background: transparent;
+  color: #284358;
+}
+.ultimate-card .text-button {
+  min-height: 36px;
+  margin-top: 8px;
+  padding: 6px 12px;
+}
+.ultimate-card :is(button, input):focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.ultimate-card .cloud-question { margin: 0; padding: 0; border: 0; background: transparent; }
+.tone-settings, .focus-reply {
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  color: #284358;
+}
+.tone-settings label { display: block; margin: 6px 0; }
+@media (max-height: 650px) {
+  .ultimate-overlay { padding-block: 8px; gap: 6px; }
+  .ultimate-card { max-height: 60vh; padding-block: 8px; }
+  .ultimate-card h1 { font-size: clamp(18px, 3.5vw, 26px); }
 }
 
 [hidden] { display: none !important; }
@@ -1720,10 +1786,6 @@ button.link:hover {
 }
 @media (max-height: 560px) {
   main.home-main { justify-content: flex-start; }
-}
-@keyframes ultimate-in {
-  from { opacity: 0; transform: scale(1.03); }
-  to { opacity: 1; transform: none; }
 }
 
 /* 하위 화면 머리 */

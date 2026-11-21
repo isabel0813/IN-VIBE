@@ -1,5 +1,19 @@
 import type { WidgetLayout } from "../desktop/bridge";
 
+export function bubblePlacement({ height, petY }: WidgetLayout) {
+  const below = height - petY - 80;
+  const above = petY >= below;
+  return {
+    above,
+    style: {
+      left: 8,
+      right: 8,
+      maxHeight: Math.max(0, (above ? petY : below) - 16),
+      ...(above ? { bottom: height - petY + 8 } : { top: petY + 88 }),
+    },
+  };
+}
+
 export function previewPlacement(
   x: number,
   y: number,

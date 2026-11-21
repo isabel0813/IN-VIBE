@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import RecoveryFlow from "./RecoveryFlow";
+import InactivityQuestion from "./InactivityQuestion";
 import { activityApi } from "./bridge";
 import { api } from "../api/client";
 import type { RecoveryPlan } from "../api/types";
@@ -8,6 +9,38 @@ import type { RecoveryPlan } from "../api/types";
 const incident = { id: 42, seconds: 305, startedAt: 1000, process: "chrome.exe", title: "private game title", claimed: false };
 const result: RecoveryPlan = { wasted_minutes: 5, now_task_changed: false, impacts: [], plan: { now: "2026-11-11T12:00:00+09:00", status: "ok", now_task: null, order: [], free_minutes: null, start_by: null, overdue: [] } };
 beforeEach(() => { vi.spyOn(activityApi, "respond").mockResolvedValue({} as never); });
+
+it("returns from the MVP inactivity prompt without asking for time or calling the planner", async () => {
+  const wasted = vi.spyOn(api, "wasted");
+  render(<InactivityQuestion incident={{ ...incident, kind: "inactivity", stage: 1 }} />);
+  fireEvent.click(screen.getByRole("button", { name: "돌아갈게..." }));
+  await waitFor(() => expect(activityApi.respond).toHaveBeenCalledExactlyOnceWith(42, "return"));
+  expect(screen.queryByRole("spinbutton")).toBeNull();
+  expect(wasted).not.toHaveBeenCalled();
+});
+
+it("asks for an explicit local duration and never sends a no-input confirmation to the planner", async () => {
+  const wasted = vi.spyOn(api, "wasted");
+  render(<RecoveryFlow incident={{ ...incident, kind: "inactivity", stage: 2, seconds: 300 }} paused={false} />);
+  expect(screen.getByText(/벌써 5분째야/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "맞아, 딴짓했어" }));
+  const confirm = screen.getByRole<HTMLButtonElement>("button", { name: "시간 확인하고 공부로 복귀" });
+  expect(confirm.disabled).toBe(true);
+  expect(activityApi.respond).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText("실제 이탈 시간 (분)"), { target: { value: "3" } });
+  fireEvent.click(confirm);
+  fireEvent.click(confirm);
+  await waitFor(() => expect(screen.getByText(/직접 확인한 이탈 3분/)).toBeTruthy());
+  expect(activityApi.respond).toHaveBeenCalledExactlyOnceWith(42, "confirm_local", 3);
+  expect(wasted).not.toHaveBeenCalled();
+});
+
+it.each([["공부 중이야", "studying"], ["잠깐 쉬는 중이야", "break"]])("sends the local %s response", async (label, choice) => {
+  render(<RecoveryFlow incident={{ ...incident, kind: "inactivity", stage: 1 }} paused={false} />);
+  expect(screen.getByText("혹시 딴짓 중이야?")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: label }));
+  await waitFor(() => expect(activityApi.respond).toHaveBeenCalledExactlyOnceWith(42, choice));
+});
 afterEach(() => vi.restoreAllMocks());
 
 describe("measured check-in", () => {

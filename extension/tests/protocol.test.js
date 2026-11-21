@@ -8,6 +8,22 @@ const id = 'a'.repeat(32), url = 'https://www.youtube.com/watch?v=abcdefghijk';
 const pending = { nonce:'nonce',tabId:1,windowId:2,url };
 const sender = { id,frameId:0,tab:{id:1,windowId:2},url };
 const message = { type:'observation',nonce:'nonce',payload:{kind:'watch',videoId:'abcdefghijk',title:'게임 플레이',playing:true} };
+test('PiP-only probes accept only verified watch-page PiP and playing follows the originating video', () => {
+  const video = { paused:false, ended:false, seeking:false, readyState:4, playbackRate:1 };
+  const player = { querySelector:()=>video, classList:{contains:()=>false} };
+  const watch = { getAttribute:()=> 'abcdefghijk', querySelector:s=>s==='#movie_player'?player:{textContent:'게임 플레이'} };
+  const doc = { visibilityState:'hidden', pictureInPictureElement:video, title:'게임 플레이 - YouTube',
+    querySelector:s=>s.startsWith('ytd')?watch:null };
+  const check = { ...pending, pipOnly:true };
+  assert.equal(validateObservation(message,sender,id,check),null);
+  const payload = AnnyongObserver.read(doc,url,true);
+  assert.equal(payload.kind,'pip');
+  assert.deepEqual(validateObservation({...message,payload},sender,id,check),payload);
+  video.paused=true;
+  assert.equal(AnnyongObserver.read(doc,url,true).playing,false);
+  doc.pictureInPictureElement=null;
+  assert.equal(AnnyongObserver.read(doc,url,true).kind,'unavailable');
+});
 test('declarative and recovery injections share one observation listener', async () => {
   const listeners = [];
   const source = await readFile(new URL('../content.js', import.meta.url), 'utf8');

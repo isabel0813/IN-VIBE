@@ -110,8 +110,7 @@ impl Browser {
             .filter(|(o, at)| {
                 now.saturating_sub(*at) <= 2500
                     && o.playing
-                    && o.kind == "watch"
-                    && titles
+                    && (o.kind == "pip" || (o.kind == "watch" && titles
                         .iter()
                         .filter(|title| title_matches(title, &o.title))
                         .count()
@@ -124,7 +123,7 @@ impl Browser {
                                 .title
                                 .split_whitespace()
                                 .eq(o.title.split_whitespace())
-                    })
+                    })))
                     && seen.insert(o.video_id.clone())
             })
             .map(|(o, _)| o.clone())
@@ -162,7 +161,7 @@ impl Browser {
             // A visible background player proves playback, not active use.
             // Keep it observable without accumulating a local suspect streak.
             if !native.process.eq_ignore_ascii_case("chrome.exe")
-                || !title_matches(&native.title, &o.title)
+                || !title_matches(&native.title, &o.title) || o.kind == "pip"
             {
                 self.view.observing = true;
                 self.consumed = None;
@@ -330,6 +329,22 @@ fn title_matches(window: &str, video: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn standard_pip_bypasses_only_window_title_visibility_and_deduplicates() {
+        let mut browser = Browser::default();
+        browser.view.consent = true;
+        browser.view.collecting = true;
+        browser.snapshot = true;
+        let normal = Observation { kind: "watch".into(), video_id: Some("abcdefghijk".into()), title: "Video".into(), playing: true };
+        let pip = Observation { kind: "pip".into(), ..normal.clone() };
+        assert!(pip.valid());
+        browser.candidates = vec![(normal, 1000), (pip, 1000)];
+        assert_eq!(browser.visible_videos(1000, &[])[0].kind, "pip");
+        assert_eq!(browser.visible_videos(1000, &["Video - YouTube".into()]).len(), 1);
+        assert!(browser.visible_videos(3501, &[]).is_empty());
+        browser.candidates[1].0.playing = false;
+        assert!(browser.visible_videos(1000, &[]).is_empty());
+    }
     #[test]
     fn background_playback_is_observable_but_never_a_local_suspect() {
         let mut b = Browser::default();

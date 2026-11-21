@@ -4,12 +4,14 @@ test('samples selected tabs in multiple unfocused windows, atomically excluding 
   const event=()=>({listeners:[],addListener(fn){this.listeners.push(fn);},emit(...a){for(const fn of this.listeners)fn(...a);}});
   const id='a'.repeat(32), snapshots=[];
   const tabs=[{id:1,windowId:11,active:true,url:'https://www.youtube.com/watch?v=abcdefghijk'}, {id:2,windowId:22,active:true,url:'https://www.youtube.com/watch?v=zyxwvutsrqp'}];
-  let interval, paused=false, minimized=false, inactive=false;
+  let interval, paused=false, minimized=false, inactive=false, pip=false;
   const port={onMessage:event(),onDisconnect:event(),disconnect(){this.onDisconnect.emit();},postMessage(m){if(m.type==='heartbeat')this.onMessage.emit({type:'status',connected:true,collecting:true,generation:42}); if(m.type==='snapshot')snapshots.push(m);}};
   globalThis.chrome={storage:{local:{get:async()=>({enabled:true})}},runtime:{id,getURL:p=>`chrome-extension://${id}/${p}`,onMessage:event(),connectNative:()=>port},
-    tabs:{query:async query=>{assert.equal(query.active,true);assert.equal(query.lastFocusedWindow,undefined);return tabs;},get:async tabId=>({...tabs.find(t=>t.id===tabId),active:!inactive}),sendMessage:async(tabId,m)=>{
+    tabs:{query:async query=>{assert.equal(query.lastFocusedWindow,undefined);return query.active && inactive ? [] : tabs;},get:async tabId=>({...tabs.find(t=>t.id===tabId),active:!inactive}),sendMessage:async(tabId,m)=>{
       const tab=tabs.find(t=>t.id===tabId);
-      const payload={kind:'watch',videoId:tabId===1?'abcdefghijk':'zyxwvutsrqp',title:tabId===1?'gameplay':'lecture',playing:!(paused&&tabId===2)};
+      const inPip=pip&&tabId===2;
+      const payload=m.pipOnly&&!inPip ? {kind:'unavailable',videoId:null,title:'',playing:false}
+        : {kind:inPip?'pip':'watch',videoId:tabId===1?'abcdefghijk':'zyxwvutsrqp',title:tabId===1?'gameplay':'lecture',playing:!(paused&&tabId===2)};
       chrome.runtime.onMessage.emit({type:'observation',nonce:m.nonce,payload},{id,frameId:0,url:tab.url,tab},()=>{});
     },onActivated:event(),onRemoved:event(),onUpdated:event()},
     windows:{get:async windowId=>({focused:false,state:minimized&&windowId===22?'minimized':'normal'}),onFocusChanged:event(),onRemoved:event()}};
@@ -24,6 +26,12 @@ test('samples selected tabs in multiple unfocused windows, atomically excluding 
     paused=false; minimized=true; interval(); await flush(); await flush();
     assert.equal(snapshots.at(-1).observations.length,1);
     inactive=true; interval(); await flush(); await flush();
+    assert.deepEqual(snapshots.at(-1).observations,[]);
+    pip=true; interval(); await flush(); await flush();
+    assert.deepEqual(snapshots.at(-1).observations.map(o=>o.kind),['pip']);
+    paused=true; interval(); await flush(); await flush();
+    assert.deepEqual(snapshots.at(-1).observations,[]);
+    paused=false; pip=false; interval(); await flush(); await flush();
     assert.deepEqual(snapshots.at(-1).observations,[]);
   } finally {globalThis.setInterval=old;delete globalThis.chrome;}
 });

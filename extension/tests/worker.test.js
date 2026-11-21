@@ -34,7 +34,10 @@ test("worker gates native access, selected tab, window focus, consent and discon
     assert.equal((await request({...observation,nonce:challenges.at(-1).nonce},sender)).ok,false);
     active=true; focused=false; chrome.windows.onFocusChanged.emit(); interval(); await flush();
     assert.equal(challenges.length,3);
-    await request({...observation,nonce:challenges.at(-1).nonce},sender); await flush(); focused=true; minimized=true; interval(); await flush(); assert.equal(sent.at(-1).type,"snapshot"); assert.deepEqual(sent.at(-1).observations,[]);
+    await request({...observation,nonce:challenges.at(-1).nonce},sender); await flush(); focused=true; minimized=true; interval(); await flush();
+    assert.equal(challenges.at(-1).pipOnly,true);
+    await request({type:"observation",nonce:challenges.at(-1).nonce,payload:{kind:"unavailable",videoId:null,title:"",playing:false}},sender);
+    await flush(); assert.equal(sent.at(-1).type,"snapshot"); assert.deepEqual(sent.at(-1).observations,[]);
     minimized=false; await request({type:"enable",enabled:false},popup);
     const count=challenges.length; interval(); await flush(); assert.equal(challenges.length,count);
     assert.equal((await request({type:"status"},popup)).connected,false);

@@ -8,7 +8,7 @@
   document.addEventListener("visibilitychange", reset);
   chrome.runtime.onMessage.addListener((message, sender, reply) => {
     if (sender.id !== chrome.runtime.id || message?.type !== "observe" || typeof message.nonce !== "string" || message.nonce.length !== 36) return;
-    let payload = globalThis.AnnyongObserver.read(document, location.href);
+    let payload = globalThis.AnnyongObserver.read(document, location.href, message.pipOnly === true);
     const key = `${payload.videoId}:${payload.title}`;
     if (previous !== key) { previous = key; changedAt = performance.now(); }
     if (performance.now() - changedAt < 1500) payload = { kind: "unavailable", videoId: null, title: "", playing: false };

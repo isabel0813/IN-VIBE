@@ -22,7 +22,20 @@ struct AppState {
     browser: Mutex<browser::Browser>,
     layout: Mutex<Layout>,
     positioned: AtomicBool,
-    ultimate: Mutex<Option<bool>>,
+    ultimate: Mutex<Option<UltimateWindow>>,
+}
+#[derive(Clone, Copy)]
+struct UltimateWindow {
+    fullscreen: bool,
+    hide_main: bool,
+    restore_widget: bool,
+    minimize_main: bool,
+    source: UltimateSource,
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum UltimateSource {
+    Youtube,
+    Inactivity(u64),
 }
 type Result<T> = std::result::Result<T, String>;
 fn native<T>(value: tauri::Result<T>) -> Result<T> {
@@ -62,6 +75,7 @@ fn session_action(
     let next = {
         let mut session = state.session.lock().map_err(|e| e.to_string())?;
         let reset = matches!(&action, Action::Start { .. } | Action::End);
+        let begins = matches!(&action, Action::Start { .. } | Action::Resume);
         session.apply(action, now, cfg!(debug_assertions))?;
         // Commands and sampler always acquire session before activity.
         let mut detector = state.activity.lock().map_err(|e| e.to_string())?;
@@ -74,13 +88,20 @@ fn session_action(
             detector.reset_session();
         } else if session.paused {
             detector.stop();
+            detector.reset_inactivity();
+        }
+        if begins && session.running && !session.paused && detector.view.consent {
+            detector.begin_inactivity(activity_now());
         }
         let _ = app.emit("activity-state", &detector.view);
         session.clone()
     };
     // The acknowledgement is also a snapshot; revision ordering tolerates event/response races.
     let _ = app.emit("focus-session", &next);
-    if close_ultimate { hide_ultimate(&app, &state)?; }
+    if close_ultimate {
+        hide_ultimate(&app, &state)?;
+        close_automatic_widget(&app, &state)?;
+    }
     Ok(next)
 }
 
@@ -124,6 +145,8 @@ fn activity_configure(
     browser.invalidate();
     if !detector.view.consent {
         browser.view.consent = false;
+    } else if session.running && !session.paused {
+        detector.begin_inactivity(activity_now());
     }
     if session.running {
         session.character = if session.paused {
@@ -140,7 +163,10 @@ fn activity_configure(
     drop(browser);
     drop(detector);
     drop(session);
-    if !view.consent { hide_ultimate(&app, &state)?; }
+    if !view.consent {
+        hide_ultimate(&app, &state)?;
+        close_automatic_widget(&app, &state)?;
+    }
     Ok(view)
 }
 
@@ -151,24 +177,36 @@ fn activity_respond(
     state: State<'_, AppState>,
     id: u64,
     choice: String,
+    confirmed_minutes: Option<u32>,
 ) -> Result<activity::View> {
     allowed(&caller)?;
     let mut session = state.session.lock().map_err(|e| e.to_string())?;
     let mut detector = state.activity.lock().map_err(|e| e.to_string())?;
-    if !session.running || (choice == "claim" && session.paused) {
+    if !session.running || (matches!(choice.as_str(), "claim" | "confirm_local" | "return") && session.paused) {
         return Err("집중 세션을 재개한 뒤 확인해 주세요.".into());
     }
+    if choice == "confirm_local" && !confirmed_minutes.is_some_and(|minutes| minutes <= 1440) {
+        return Err("실제 이탈 시간을 0~1440분의 정수로 확인해 주세요.".into());
+    }
+    let idle_response = detector.inactivity_id() == Some(id);
     detector.respond(id, &choice, activity_now())?;
+    if idle_response && detector.view.consent && !session.paused
+        && matches!(choice.as_str(), "studying" | "confirm_local" | "return")
+    {
+        // The click/key used to answer must not itself restart the reminder.
+        detector.suppress_inactivity_until_input(activity::last_input());
+    }
     session.simulated = false;
     session.character = match choice.as_str() {
         "claim" | "review" => session::Character::Checkin,
-        "resolved" => session::Character::Recovery,
+        "resolved" | "confirm_local" => session::Character::Recovery,
         "break" => session::Character::Idle,
         _ => session::Character::Focus,
     };
     if choice == "break" {
         session.paused = true;
         detector.stop();
+        detector.reset_inactivity();
         state
             .browser
             .lock()
@@ -181,7 +219,16 @@ fn activity_respond(
     session.revision += 1;
     let _ = app.emit("focus-session", &*session);
     let _ = app.emit("activity-state", &detector.view);
-    Ok(detector.view.clone())
+    let view = detector.view.clone();
+    drop(detector);
+    drop(session);
+    if choice == "break" {
+        hide_ultimate(&app, &state)?;
+        close_automatic_widget(&app, &state)?;
+    } else if idle_response && choice != "review" {
+        hide_ultimate_for(&app, &state, Some(UltimateSource::Inactivity(id)))?;
+    }
+    Ok(view)
 }
 
 #[tauri::command]
@@ -228,7 +275,7 @@ fn browser_configure(
     let view = browser.view.clone();
     drop(browser);
     drop(detector);
-    if !consent { hide_ultimate(&app, &state)?; }
+    if !consent { hide_ultimate_for(&app, &state, Some(UltimateSource::Youtube))?; }
     Ok(view)
 }
 
@@ -239,18 +286,37 @@ fn can_show_ultimate(session: &Session, activity_consent: bool, browser: &browse
 }
 
 fn hide_ultimate(app: &AppHandle, state: &AppState) -> Result<()> {
-    let previous = state.ultimate.lock().map_err(|e| e.to_string())?.take();
-    if let Some(fullscreen) = previous {
-        if let Err(error) = native(window(app, "main")?.set_fullscreen(fullscreen)) {
-            *state.ultimate.lock().map_err(|e| e.to_string())? = Some(fullscreen);
-            return Err(error);
+    hide_ultimate_for(app, state, None)
+}
+fn hide_ultimate_for(app: &AppHandle, state: &AppState, source: Option<UltimateSource>) -> Result<()> {
+    let previous = {
+        let mut current = state.ultimate.lock().map_err(|e| e.to_string())?;
+        if source.is_some_and(|source| current.is_none_or(|window| window.source != source)) {
+            return Ok(());
         }
+        current.take()
+    };
+    let Some(previous) = previous else { return Ok(()); };
+    let restore = || {
+        let main = window(app, "main")?;
+        native(main.set_fullscreen(previous.fullscreen))?;
+        if previous.hide_main {
+            native(main.hide())?;
+        } else if previous.minimize_main {
+            native(main.minimize())?;
+        }
+        if previous.restore_widget { native(window(app, "widget")?.show())?; }
+        Ok(())
+    };
+    if let Err(error) = restore() {
+        *state.ultimate.lock().map_err(|e| e.to_string())? = Some(previous);
+        return Err(error);
     }
     Ok(())
 }
 
 #[tauri::command]
-fn ultimate_show(caller: WebviewWindow, app: AppHandle, state: State<'_, AppState>, task_id: i64) -> Result<()> {
+fn ultimate_show(caller: WebviewWindow, app: AppHandle, state: State<'_, AppState>, task_id: i64, inactivity_id: Option<u64>) -> Result<()> {
     if caller.label() != "main" { return Err("궁극기는 메인 화면에서만 표시할 수 있어요.".into()); }
     {
         // Match the sampler's lock order and release all locks before window calls.
@@ -258,17 +324,32 @@ fn ultimate_show(caller: WebviewWindow, app: AppHandle, state: State<'_, AppStat
         let detector = state.activity.lock().map_err(|e| e.to_string())?;
         let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
         browser.status(activity_now(), session.running && !session.paused && detector.view.consent);
-        if !can_show_ultimate(&session, detector.view.consent, &browser.view, task_id) {
+        let eligible = if let Some(id) = inactivity_id {
+            session.running && !session.paused
+                && session.task.as_ref().is_some_and(|task| task.id == task_id)
+                && detector.can_show_inactivity_ultimate(id)
+        } else {
+            can_show_ultimate(&session, detector.view.consent, &browser.view, task_id)
+        };
+        if !eligible {
             return Err("동의한 실행 중 세션에서만 궁극기를 표시할 수 있어요.".into());
         }
     }
     if state.ultimate.lock().map_err(|e| e.to_string())?.is_some() { return Ok(()); }
+    close_automatic_widget(&app, &state)?;
     let main = window(&app, "main")?;
-    let previous = native(main.is_fullscreen())?;
+    let widget = window(&app, "widget")?;
+    let previous = UltimateWindow {
+        fullscreen: native(main.is_fullscreen())?,
+        hide_main: !native(main.is_visible())?,
+        restore_widget: native(widget.is_visible())? && !native(widget.is_minimized())?,
+        minimize_main: native(main.is_minimized())?,
+        source: inactivity_id.map_or(UltimateSource::Youtube, UltimateSource::Inactivity),
+    };
     native(main.set_fullscreen(true))?;
     *state.ultimate.lock().map_err(|e| e.to_string())? = Some(previous);
-    // Existing navigation resolves to the current one-line focus view.
-    if let Err(error) = restore_main(&app, "input") {
+    let display = native(widget.hide()).and_then(|()| native(main.unminimize())).and_then(|()| native(main.show())).and_then(|()| native(main.set_focus()));
+    if let Err(error) = display {
         let _ = hide_ultimate(&app, &state);
         return Err(error);
     }
@@ -305,9 +386,10 @@ mod ultimate_tests {
 }
 
 #[tauri::command]
-fn ultimate_hide(caller: WebviewWindow, app: AppHandle, state: State<'_, AppState>) -> Result<()> {
+fn ultimate_hide(caller: WebviewWindow, app: AppHandle, state: State<'_, AppState>, inactivity_id: Option<u64>) -> Result<()> {
     allowed(&caller)?;
-    hide_ultimate(&app, &state)
+    let source = inactivity_id.map_or(UltimateSource::Youtube, UltimateSource::Inactivity);
+    hide_ultimate_for(&app, &state, Some(source))
 }
 
 #[cfg(windows)]
@@ -380,6 +462,18 @@ fn start_browser_bridge(app: AppHandle) {
 }
 
 fn resize_widget(app: &AppHandle, open: bool) -> Result<Layout> {
+    resize_widget_with_mode(app, open, false)
+}
+
+fn close_automatic_widget(app: &AppHandle, state: &AppState) -> Result<()> {
+    let automatic = state.layout.lock().map_err(|e| e.to_string())?.automatic;
+    if automatic {
+        resize_widget(app, false)?;
+    }
+    Ok(())
+}
+
+fn resize_widget_with_mode(app: &AppHandle, open: bool, automatic: bool) -> Result<Layout> {
     let widget = window(app, "widget")?;
     let state = app.state::<AppState>();
     let old = *state.layout.lock().map_err(|e| e.to_string())?;
@@ -393,7 +487,7 @@ fn resize_widget(app: &AppHandle, open: bool) -> Result<Layout> {
         position.x as f64 + old.pet_x * scale,
         position.y as f64 + old.pet_y * scale,
     );
-    let (position, layout) = geometry::place(
+    let (position, mut layout) = geometry::place(
         anchor,
         (
             area.position.x as f64,
@@ -404,6 +498,7 @@ fn resize_widget(app: &AppHandle, open: bool) -> Result<Layout> {
         scale,
         open,
     );
+    layout.automatic = open && automatic;
     // Update before focus operations: a blur may be delivered synchronously.
     *state.layout.lock().map_err(|e| e.to_string())? = layout;
     native(widget.set_size(LogicalSize::new(layout.width, layout.height)))?;
@@ -411,9 +506,24 @@ fn resize_widget(app: &AppHandle, open: bool) -> Result<Layout> {
         position.0.round() as i32,
         position.1.round() as i32,
     )))?;
-    native(widget.set_focusable(open))?;
+    if layout.automatic {
+        // A visible widget can resize without activating it. Keep a hidden widget
+        // non-activating when showing it, then wait for an intentional click.
+        if state.ultimate.lock().map_err(|e| e.to_string())?.is_none()
+            && (!native(widget.is_visible())? || native(widget.is_minimized())?) {
+            native(widget.set_focusable(false))?;
+            #[cfg(windows)]
+            if native(widget.is_minimized())? {
+                use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_SHOWNOACTIVATE};
+                unsafe { ShowWindow(native(widget.hwnd())?.0 as _, SW_SHOWNOACTIVATE); }
+            }
+            native(widget.show())?;
+        }
+    } else {
+        native(widget.set_focusable(open))?;
+    }
     let _ = app.emit_to("widget", "widget-layout", layout);
-    if open {
+    if open && !automatic {
         native(widget.set_focus())?;
     }
     Ok(layout)
@@ -426,9 +536,34 @@ fn widget_read_layout(caller: WebviewWindow, state: State<'_, AppState>) -> Resu
 }
 
 #[tauri::command]
-fn widget_bubble(caller: WebviewWindow, app: AppHandle, open: bool) -> Result<Layout> {
+fn widget_bubble(caller: WebviewWindow, app: AppHandle, open: bool, automatic: Option<bool>) -> Result<Layout> {
     allowed(&caller)?;
-    resize_widget(&app, open)
+    let automatic = automatic.unwrap_or(false);
+    if automatic && caller.label() != "widget" {
+        return Err("자동 말풍선은 위젯에서만 열 수 있어요.".into());
+    }
+    if open && automatic {
+        let state = app.state::<AppState>();
+        let session = state.session.lock().map_err(|e| e.to_string())?;
+        let detector = state.activity.lock().map_err(|e| e.to_string())?;
+        if !session.running || session.paused || !detector.view.consent {
+            return Ok(*state.layout.lock().map_err(|e| e.to_string())?);
+        }
+    }
+    resize_widget_with_mode(&app, open, automatic)
+}
+
+#[tauri::command]
+fn widget_interact(caller: WebviewWindow, state: State<'_, AppState>) -> Result<()> {
+    if caller.label() != "widget" {
+        return Err("위젯에서만 응답할 수 있어요.".into());
+    }
+    let layout = *state.layout.lock().map_err(|e| e.to_string())?;
+    if layout.automatic && !native(caller.is_focused())? {
+        native(caller.set_focusable(true))?;
+        native(caller.set_focus())?;
+    }
+    Ok(())
 }
 
 fn present_widget(app: &AppHandle, hide_main: bool) -> Result<()> {
@@ -521,49 +656,63 @@ pub fn run() {
                 };
                 if session.running && !session.paused && detector.view.consent {
                     let now = activity_now();
-                    let raised = match activity::sample() {
-                        Err(e) => detector.observe(Err(e), now),
-                        Ok(sample) => {
-                            let Ok(mut browser) = state.browser.lock() else {
-                                break;
-                            };
-                            browser.status(now, true);
-                            let titles = if browser.view.consent { visibility::chrome_titles() } else { vec![] };
-                            let decision = browser.choose_visible(
-                                &sample,
-                                session.task.as_ref().map(|t| t.name.as_str()).unwrap_or(""),
-                                now,
-                                &titles,
-                            );
-                            if matches!(decision, browser::Decision::Observe(..))
-                                && std::mem::take(&mut browser.discontinuous)
-                            {
-                                detector.stop();
+                    let input = activity::last_input();
+                    let one_line = session.task.as_ref().is_some_and(|t| t.id >= 1_000_000_000_000);
+                    let Ok(mut browser) = state.browser.lock() else {
+                        break;
+                    };
+                    let sample = if one_line && !browser.view.consent {
+                        Ok(activity::Sample::default())
+                    } else {
+                        activity::sample(input.as_ref().is_some_and(|i| i.elapsed_ms >= activity::INACTIVITY_MS))
+                    };
+                    browser.status(now, true);
+                    let titles = if browser.view.consent { visibility::chrome_titles() } else { vec![] };
+                    let decision = browser.choose_visible(
+                        sample.as_ref().unwrap_or(&activity::Sample::default()),
+                        session.task.as_ref().map(|t| t.name.as_str()).unwrap_or(""),
+                        now,
+                        &titles,
+                    );
+                    let youtube_playing = browser.view.observing;
+                    if matches!(decision, browser::Decision::Observe(..)) && std::mem::take(&mut browser.discontinuous) {
+                        detector.stop();
+                    }
+                    // One-line sessions keep window classification disabled. A visible
+                    // YouTube player takes priority even if the AI chooses to ignore it.
+                    let window_raised = if one_line {
+                        detector.stop();
+                        false
+                    } else {
+                        match decision {
+                            browser::Decision::Native => detector.poll(true, false, now, || sample),
+                            browser::Decision::Skip => false,
+                            browser::Decision::Observe(s, at, key, category) => {
+                                detector.observe_as(Ok(s), at, Some((key, category)))
                             }
-                            // One-line cloud sessions use /judge as their sole intervention
-                            // source, so an AI ignore/feedback cannot trigger a local alert.
-                            if session.task.as_ref().is_some_and(|t| t.id >= 1_000_000_000_000) {
-                                detector.stop();
-                                false
-                            } else { match decision {
-                                browser::Decision::Native => {
-                                    detector.poll(true, false, now, || Ok(sample))
-                                }
-                                browser::Decision::Skip => false,
-                                browser::Decision::Observe(s, at, key, category) => {
-                                    detector.observe_as(Ok(s), at, Some((key, category)))
-                                }
-                            } }
                         }
                     };
+                    let previous_stage = detector.inactivity_stage();
+                    let previous_ultimate = detector.inactivity_id().filter(|_| previous_stage == 3);
+                    let raised = detector.observe_inactivity(now, input, youtube_playing) || window_raised;
                     if raised {
                         session.character = session::Character::Suspect;
                         session.simulated = false;
                         session.revision += 1;
-                        // Expression only: never show a window, open a bubble or request focus here.
+                        let _ = app.emit("focus-session", &*session);
+                    } else if previous_stage > 0 && detector.inactivity_stage() == 0 {
+                        session.character = session::Character::Focus;
+                        session.revision += 1;
                         let _ = app.emit("focus-session", &*session);
                     }
                     let _ = app.emit("activity-state", &detector.view);
+                    if let Some(id) = previous_ultimate.filter(|_| detector.inactivity_stage() != 3) {
+                        let handle = app.clone();
+                        let _ = app.run_on_main_thread(move || {
+                            let state = handle.state::<AppState>();
+                            let _ = hide_ultimate_for(&handle, &state, Some(UltimateSource::Inactivity(id)));
+                        });
+                    }
                 }
             });
             Ok(())
@@ -582,6 +731,7 @@ pub fn run() {
             browser_configure,
             widget_read_layout,
             widget_bubble,
+            widget_interact,
             widget_show,
             main_show,
             widget_conceal,
@@ -599,7 +749,7 @@ pub fn run() {
                     .state::<AppState>()
                     .layout
                     .lock()
-                    .map(|layout| layout.open)
+                    .map(|layout| layout.open && !layout.automatic)
                     .unwrap_or(false);
                 if open {
                     let _ = resize_widget(window.app_handle(), false);

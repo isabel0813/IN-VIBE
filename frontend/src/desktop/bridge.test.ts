@@ -37,6 +37,12 @@ describe("native window bridge", () => {
     });
     expect(mocks.invoke).toHaveBeenCalledWith("main_show", { target: "input" });
   });
+  it("opens an automatic window separately from deliberate input activation", async () => {
+    await nativeWidget.bubble(true, true);
+    expect(mocks.invoke.mock.calls).toEqual([["widget_bubble", { open: true, automatic: true }]]);
+    await nativeWidget.interact();
+    expect(mocks.invoke).toHaveBeenLastCalledWith("widget_interact");
+  });
   it("does not invoke OS window controls in web mode", async () => {
     mocks.isTauri.mockReturnValue(false);
     await showWidget(true);

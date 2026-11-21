@@ -2,6 +2,30 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
+pub const INACTIVITY_MS: u64 = 60_000;
+const SECOND_CHECK_MS: u64 = 300_000;
+const FINAL_CHECK_MS: u64 = 600_000;
+
+pub struct LastInput {
+    pub tick: u32,
+    pub elapsed_ms: u64,
+}
+
+#[derive(Default)]
+struct Inactivity {
+    since: Option<u64>,
+    sampled_at: Option<u64>,
+    prompt_tick: Option<u32>,
+    answered_tick: Option<u32>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum IncidentKind {
+    Window,
+    Inactivity,
+}
+
 #[derive(Clone, Debug, Default, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum Category {
@@ -27,6 +51,8 @@ impl Sample {
 #[serde(rename_all = "camelCase")]
 pub struct Incident {
     pub id: u64,
+    pub kind: IncidentKind,
+    pub stage: u8,
     pub started_at: u64,
     pub seconds: u64,
     pub process: String,
@@ -86,6 +112,7 @@ pub struct Config {
 }
 #[derive(Default)]
 pub struct Detector {
+    inactivity: Inactivity,
     incident_key: Option<String>,
     focus_ms: u64,
     return_since: Option<u64>,
@@ -143,6 +170,7 @@ impl Detector {
     }
     pub fn reset_session(&mut self) {
         self.stop();
+        self.reset_inactivity();
         self.view.incident = None;
         self.corrections.clear();
         self.cooldown_until = 0;
@@ -157,6 +185,144 @@ impl Detector {
         self.view.category = Category::Unknown;
         self.view.error = None;
         self.view.revision += 1;
+    }
+    pub fn inactivity_pending(&self) -> bool {
+        self.view
+            .incident
+            .as_ref()
+            .is_some_and(|i| i.kind == IncidentKind::Inactivity)
+    }
+    pub fn begin_inactivity(&mut self, now: u64) {
+        self.inactivity.since.get_or_insert(now);
+    }
+    pub fn suppress_inactivity_until_input(&mut self, input: Option<LastInput>) {
+        if let Some(input) = input {
+            self.inactivity.answered_tick = Some(input.tick);
+        }
+    }
+    pub fn inactivity_stage(&self) -> u8 {
+        self.view
+            .incident
+            .as_ref()
+            .filter(|i| i.kind == IncidentKind::Inactivity)
+            .map_or(0, |i| i.stage)
+    }
+    pub fn inactivity_id(&self) -> Option<u64> {
+        self.view
+            .incident
+            .as_ref()
+            .filter(|i| i.kind == IncidentKind::Inactivity)
+            .map(|i| i.id)
+    }
+    pub fn can_show_inactivity_ultimate(&self, id: u64) -> bool {
+        self.view.consent && self.inactivity_stage() == 3 && self.inactivity_id() == Some(id)
+    }
+    pub fn reset_inactivity(&mut self) {
+        if self.inactivity_pending() {
+            self.view.incident = None;
+            self.view.revision += 1;
+        }
+        self.inactivity = Inactivity::default();
+    }
+    fn suspend_inactivity_clock(&mut self) {
+        self.inactivity.prompt_tick = None;
+        if let Some(incident) = self
+            .view
+            .incident
+            .as_mut()
+            .filter(|i| i.kind == IncidentKind::Inactivity && i.stage != 0)
+        {
+            incident.stage = 0;
+            self.view.revision += 1;
+        }
+    }
+    pub fn observe_inactivity(
+        &mut self,
+        now: u64,
+        input: Option<LastInput>,
+        youtube_playing: bool,
+    ) -> bool {
+        if !self.view.consent {
+            self.reset_inactivity();
+            return false;
+        }
+        // The fullscreen question stays answerable even when the pointer moves.
+        // Pause/end/revocation and the answer handlers explicitly reset it.
+        if self.inactivity_stage() == 3 {
+            return false;
+        }
+        let Some(input) = input else {
+            self.suspend_inactivity_clock();
+            self.inactivity.since = None;
+            return false;
+        };
+        if self
+            .inactivity
+            .sampled_at
+            .is_some_and(|at| now.saturating_sub(at) > 2500)
+        {
+            // A sleep, suspend or missed poll is not a measured inactive interval.
+            self.suspend_inactivity_clock();
+            self.inactivity.since = None;
+        }
+        self.inactivity.sampled_at = Some(now);
+        let since = *self.inactivity.since.get_or_insert(now);
+        let elapsed = input.elapsed_ms.min(now.saturating_sub(since));
+        if youtube_playing {
+            self.suspend_inactivity_clock();
+            // Watching a known visible playing video takes priority for this interval.
+            if elapsed >= INACTIVITY_MS {
+                self.inactivity.answered_tick = Some(input.tick);
+            }
+            return false;
+        }
+        if self.inactivity_pending() && self.inactivity.prompt_tick != Some(input.tick) {
+            // New input ends escalation while keeping the visible question answerable.
+            self.suspend_inactivity_clock();
+            self.inactivity.prompt_tick = Some(input.tick);
+        }
+        let stage = if self.inactivity.answered_tick == Some(input.tick) {
+            0
+        } else if elapsed >= FINAL_CHECK_MS {
+            3
+        } else if elapsed >= SECOND_CHECK_MS {
+            2
+        } else if elapsed >= INACTIVITY_MS {
+            1
+        } else {
+            0
+        };
+        if let Some(incident) = &mut self.view.incident {
+            if incident.kind == IncidentKind::Inactivity
+                && self.inactivity.prompt_tick == Some(input.tick)
+            {
+                if stage > incident.stage {
+                    incident.stage = stage;
+                    self.view.revision += 1;
+                }
+                if stage != 0 {
+                    incident.seconds = elapsed / 1000;
+                }
+            }
+            return false;
+        }
+        if stage == 0 {
+            return false;
+        }
+        self.next_id += 1;
+        self.inactivity.prompt_tick = Some(input.tick);
+        self.view.incident = Some(Incident {
+            id: self.next_id,
+            kind: IncidentKind::Inactivity,
+            stage,
+            started_at: now.saturating_sub(elapsed),
+            seconds: elapsed / 1000,
+            process: String::new(),
+            title: String::new(),
+            claimed: false,
+        });
+        self.view.revision += 1;
+        true
     }
     fn classify(&self, sample: &Sample) -> Category {
         if sample.idle {
@@ -246,6 +412,8 @@ impl Detector {
             self.return_since = Some(now);
             self.view.incident = Some(Incident {
                 id: self.next_id,
+                kind: IncidentKind::Window,
+                stage: 1,
                 started_at: now.saturating_sub(self.view.held_seconds * 1000),
                 seconds: self.view.held_seconds,
                 process: sample.process,
@@ -263,7 +431,21 @@ impl Detector {
             .as_mut()
             .filter(|i| i.id == id)
             .ok_or("이미 끝난 확인이에요.")?;
-        if choice == "review" {
+        if incident.kind == IncidentKind::Inactivity && choice != "review" {
+            match choice {
+                "studying" | "break" | "return" => {}
+                "confirm_local" => {
+                    self.view.totals.confessions += 1;
+                    self.return_since = Some(now);
+                }
+                _ => return Err("무입력 확인은 로컬 복귀만 지원해요.".into()),
+            }
+            self.inactivity.answered_tick = self.inactivity.prompt_tick.take();
+            self.view.incident = None;
+            self.previous = None;
+            self.held_ms = 0;
+            self.view.held_seconds = 0;
+        } else if choice == "review" {
             if incident.claimed {
                 return Err("이미 전송한 확인이에요.".into());
             }
@@ -302,31 +484,181 @@ impl Detector {
     }
 }
 
+#[cfg(test)]
+mod inactivity_tests {
+    use super::*;
+
+    fn input(tick: u32, elapsed_ms: u64) -> Option<LastInput> {
+        Some(LastInput { tick, elapsed_ms })
+    }
+
+    fn update(detector: &mut Detector, now: u64, tick: u32) {
+        detector.observe_inactivity(now, input(tick, now - u64::from(tick)), false);
+    }
+
+    #[test]
+    fn one_five_and_ten_minutes_share_the_same_last_input_and_silence_is_not_a_response() {
+        let mut detector = Detector::default();
+        detector.view.consent = true;
+        let mut id = None;
+        for now in (0..=610_000).step_by(1000) {
+            update(&mut detector, now, 0);
+            match now {
+                59_000 => assert_eq!(detector.inactivity_stage(), 0),
+                60_000 => {
+                    id = detector.inactivity_id();
+                    assert!(id.is_some());
+                    assert_eq!(detector.inactivity_stage(), 1);
+                }
+                299_000 => assert_eq!(detector.inactivity_stage(), 1),
+                300_000 => assert_eq!(detector.inactivity_stage(), 2),
+                599_000 => assert_eq!(detector.inactivity_stage(), 2),
+                600_000 => assert_eq!(detector.inactivity_stage(), 3),
+                _ => {}
+            }
+        }
+        let incident = detector.view.incident.as_ref().unwrap();
+        assert_eq!(Some(incident.id), id);
+        assert_eq!(incident.started_at, 0);
+        assert_eq!(incident.seconds, 600);
+        assert_eq!(detector.view.totals.confessions, 0);
+        assert!(!incident.claimed);
+        assert!(detector.can_show_inactivity_ultimate(incident.id));
+        assert!(!detector.can_show_inactivity_ultimate(incident.id + 1));
+        detector.observe_inactivity(611_000, input(611_000, 0), true);
+        assert_eq!(detector.inactivity_stage(), 3);
+        assert_eq!(detector.inactivity_id(), id);
+        detector.respond(incident_id(id), "studying", 611_000).unwrap();
+        assert!(detector.inactivity_id().is_none());
+    }
+
+    #[test]
+    fn input_before_fullscreen_restarts_the_clock_without_dropping_the_question() {
+        let mut detector = Detector::default();
+        detector.view.consent = true;
+        for now in (0..=60_000).step_by(1000) {
+            update(&mut detector, now, 0);
+        }
+        let id = detector.inactivity_id();
+        assert!(id.is_some());
+        update(&mut detector, 61_000, 61_000);
+        assert_eq!(detector.inactivity_stage(), 0);
+        assert_eq!(detector.inactivity_id(), id);
+        for now in (62_000..=160_000).step_by(1000) {
+            update(&mut detector, now, now as u32);
+            assert_eq!(detector.inactivity_id(), id);
+            assert_eq!(detector.inactivity_stage(), 0);
+        }
+        for now in (161_000..220_000).step_by(1000) {
+            update(&mut detector, now, 160_000);
+            assert_eq!(detector.inactivity_stage(), 0);
+        }
+        update(&mut detector, 220_000, 160_000);
+        assert_eq!(detector.inactivity_stage(), 1);
+        assert_eq!(detector.inactivity_id(), id);
+        detector
+            .respond(incident_id(id), "studying", 220_000)
+            .unwrap();
+        assert!(detector.inactivity_id().is_none());
+    }
+
+    fn incident_id(id: Option<u64>) -> u64 {
+        id.expect("inactivity incident should exist")
+    }
+
+    #[test]
+    fn study_suppresses_the_same_interval_and_a_new_interval_can_prompt() {
+        let mut detector = Detector::default();
+        detector.view.consent = true;
+        for now in (0..=60_000).step_by(1000) {
+            update(&mut detector, now, 0);
+        }
+        let id = incident_id(detector.inactivity_id());
+        assert!(detector.respond(id, "claim", 60_000).is_err());
+        detector.respond(id, "studying", 60_000).unwrap();
+        detector.suppress_inactivity_until_input(input(61_000, 0));
+        for now in (61_000..=601_000).step_by(1000) {
+            update(&mut detector, now, 61_000);
+            assert!(detector.inactivity_id().is_none());
+        }
+        for now in (602_000..=662_000).step_by(1000) {
+            update(&mut detector, now, 602_000);
+        }
+        let next = incident_id(detector.inactivity_id());
+        assert_ne!(id, next);
+        detector.respond(next, "confirm_local", 662_000).unwrap();
+        assert!(detector.respond(next, "confirm_local", 662_000).is_err());
+        assert_eq!(detector.view.totals.confessions, 1);
+    }
+
+    #[test]
+    fn visible_youtube_stops_escalation_and_lifecycle_changes_clear_the_question() {
+        let mut detector = Detector::default();
+        detector.view.consent = true;
+        for now in (0..=300_000).step_by(1000) {
+            update(&mut detector, now, 0);
+        }
+        assert_eq!(detector.inactivity_stage(), 2);
+        let pending = detector.inactivity_id();
+        detector.observe_inactivity(301_000, input(0, 301_000), true);
+        assert_eq!(detector.inactivity_id(), pending);
+        assert_eq!(detector.inactivity_stage(), 0);
+        update(&mut detector, 302_000, 0);
+        assert_eq!(detector.inactivity_id(), pending);
+        assert_eq!(detector.inactivity_stage(), 0);
+        detector.reset_inactivity(); // pause, also applied on starting a new task
+        detector.begin_inactivity(303_000);
+        for now in (303_000..=362_000).step_by(1000) {
+            update(&mut detector, now, 0);
+        }
+        assert!(detector.inactivity_id().is_none()); // pre-resume time is excluded
+        update(&mut detector, 363_000, 0);
+        assert!(detector.inactivity_id().is_some());
+        detector.view.consent = false;
+        update(&mut detector, 364_000, 0);
+        assert!(detector.inactivity_id().is_none());
+        detector.reset_session();
+        assert_eq!(detector.view.totals.confessions, 0);
+    }
+}
+
 #[cfg(windows)]
-pub fn sample() -> Result<Sample, String> {
+pub fn last_input() -> Option<LastInput> {
     use windows_sys::Win32::{
-        Foundation::CloseHandle,
-        System::{
-            SystemInformation::GetTickCount64,
-            Threading::{
-                OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION,
-            },
-        },
-        UI::{
-            Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO},
-            WindowsAndMessaging::{GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId},
-        },
+        System::SystemInformation::GetTickCount64,
+        UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO},
     };
-    // Read-only Win32 queries. LASTINPUTINFO exposes a timestamp, never the input itself.
+    // The OS supplies a timestamp, with no keys or pointer coordinates.
     unsafe {
         let mut input = LASTINPUTINFO {
             cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32,
             dwTime: 0,
         };
         if GetLastInputInfo(&mut input) == 0 {
-            return Err("유휴 상태를 확인하지 못했어요.".into());
+            return None;
         }
-        let idle = (GetTickCount64() as u32).wrapping_sub(input.dwTime) >= 60_000;
+        Some(LastInput {
+            tick: input.dwTime,
+            elapsed_ms: u64::from((GetTickCount64() as u32).wrapping_sub(input.dwTime)),
+        })
+    }
+}
+#[cfg(not(windows))]
+pub fn last_input() -> Option<LastInput> {
+    None
+}
+
+#[cfg(windows)]
+pub fn sample(idle: bool) -> Result<Sample, String> {
+    use windows_sys::Win32::{
+        Foundation::CloseHandle,
+        System::Threading::{
+            OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION,
+        },
+        UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId},
+    };
+    // Read-only Win32 queries. LASTINPUTINFO exposes a timestamp, never the input itself.
+    unsafe {
         let hwnd = GetForegroundWindow();
         if hwnd.is_null() {
             return Err("활성 창을 확인하지 못했어요.".into());
@@ -356,7 +688,7 @@ pub fn sample() -> Result<Sample, String> {
     }
 }
 #[cfg(not(windows))]
-pub fn sample() -> Result<Sample, String> {
+pub fn sample(_idle: bool) -> Result<Sample, String> {
     Err("Windows에서만 활동 감지를 지원해요.".into())
 }
 

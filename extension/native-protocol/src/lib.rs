@@ -18,7 +18,7 @@ impl Observation {
         if self.kind == "unavailable" {
             return self.video_id.is_none() && self.title.is_empty() && !self.playing;
         }
-        self.kind == "watch"
+        matches!(self.kind.as_str(), "watch" | "pip")
             && self.video_id.as_ref().is_some_and(|s| {
                 s.len() == 11
                     && s.bytes()

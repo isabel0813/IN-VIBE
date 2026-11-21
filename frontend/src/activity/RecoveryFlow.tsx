@@ -7,16 +7,21 @@ import { activityApi } from "./bridge";
 import type { Incident } from "./bridge";
 import "./activity.css";
 
-export default function RecoveryFlow({ incident, paused }: { incident: Incident | null; paused: boolean }) {
+export default function RecoveryFlow({ incident, paused, onLocalReturn }: {
+  incident: Incident | null; paused: boolean; onLocalReturn?: () => void;
+}) {
   const [editing, setEditing] = useState(false);
-  const [minutes, setMinutes] = useState(0);
+  const [minutes, setMinutes] = useState("");
   const [result, setResult] = useState<RecoveryPlan | null>(null);
+  const [localMinutes, setLocalMinutes] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const sending = useRef(false);
+  const inactivity = incident?.kind === "inactivity";
   useEffect(() => {
-    if (incident) { setEditing(false); setResult(null); setError(""); }
+    if (incident) { setEditing(false); setResult(null); setLocalMinutes(null); setError(""); }
   }, [incident?.id]);
+  useEffect(() => { if (paused) setLocalMinutes(null); }, [paused]);
   async function respond(choice: "studying" | "break" | "resolved") {
     if (!incident || sending.current) return;
     sending.current = true; setBusy(true); setError("");
@@ -26,22 +31,32 @@ export default function RecoveryFlow({ incident, paused }: { incident: Incident 
   }
   async function recover() {
     if (!incident || incident.claimed || sending.current || paused) return;
-    if (!Number.isInteger(minutes) || minutes < 0 || minutes > 1440) { setError("0~1440분의 정수로 입력해 주세요."); return; }
+    const amount = Number(minutes);
+    if (!minutes.trim() || !Number.isInteger(amount) || amount < 0 || amount > 1440) { setError("0~1440분의 정수로 입력해 주세요."); return; }
     sending.current = true; setBusy(true); setError("");
     let claimed = false;
     try {
+      if (inactivity) {
+        await activityApi.respond(incident.id, "confirm_local", amount);
+        setLocalMinutes(amount);
+        return;
+      }
       // Native reservation survives React remounts and protects against double clicks/windows.
       await activityApi.respond(incident.id, "claim"); claimed = true;
-      const response = await api.wasted(minutes);
+      const response = await api.wasted(amount);
       setResult(response);
       await activityApi.respond(incident.id, "resolved");
     } catch (failure) {
       setError(claimed ? `전송 결과를 확인할 수 없어요. 중복 기록을 막기 위해 재전송하지 않습니다. 계획 보기에서 현재 계획을 확인해 주세요. ${String(failure)}` : String(failure));
     } finally { sending.current = false; setBusy(false); }
   }
-  if (!incident && !result) return null;
+  if (!incident && !result && localMinutes === null) return null;
   return <section className="recovery-flow" aria-label="활동 확인과 계획 복구">
-    {result ? <>
+    {localMinutes !== null ? <>
+      <strong>놀랍게도 아직 안 망했다. 다시 시작하자.</strong>
+      <p>직접 확인한 이탈 {localMinutes}분 · 하던 일로 돌아가자.</p>
+      <button onClick={() => { setLocalMinutes(null); onLocalReturn?.(); }}>공부로 돌아가기</button>
+    </> : result ? <>
       <strong>놀랍게도 아직 안 망했다. 다시 시작하자.</strong>
       <p>확인한 이탈 {result.wasted_minutes}분 · 현재 계획 기준</p>
       <p>다음 할 일: {result.plan.now_task?.name ?? "계획에서 마감과 작업을 확인해 주세요."}<br />여유 {result.plan.free_minutes ?? 0}분 · 부족 {result.plan.order.reduce((sum, task) => sum + task.short_minutes, 0)}분</p>
@@ -55,19 +70,25 @@ export default function RecoveryFlow({ incident, paused }: { incident: Incident 
           .catch(failure => setError(String(failure))).finally(() => setBusy(false));
       }}>{result.plan.now_task ? "다음 할 일에 집중하기" : "계획 확인하기"}</button>
     </> : incident && <>
-      <p>이탈 의심 창을 연속 {Math.floor(incident.seconds / 60)}분 {incident.seconds % 60}초 관측했어. 실제 딴짓인지는 네가 확인해 줘.</p>
-      <p className="observed-title">{incident.process} · {incident.title}</p>
+      {inactivity ? <>
+        <strong>{incident.stage === 2 || (incident.stage === 0 && incident.seconds >= 300)
+          ? "벌써 5분째야. 지금도 공부 중이야?" : "혹시 딴짓 중이야?"}</strong>
+        <p>{Math.floor(incident.seconds / 60)}분 {incident.seconds % 60}초 동안 입력이 없었어. 실제로 뭘 하고 있었는지 알려 줘.</p>
+      </> : <>
+        <p>이탈 의심 창을 연속 {Math.floor(incident.seconds / 60)}분 {incident.seconds % 60}초 관측했어. 실제 딴짓인지는 네가 확인해 줘.</p>
+        <p className="observed-title">{incident.process} · {incident.title}</p>
+      </>}
       {incident.claimed ? <>
         <p>이미 전송을 시도한 확인이에요. 응답이 없으면 현재 계획을 확인해 주세요. 자동 재전송하지 않아요.</p>
         <button disabled={busy} onClick={() => void respond("resolved")}>확인 마치기</button>
       </> : editing ? <>
-        <label>실제 이탈 시간 (분)<input aria-label="실제 이탈 시간 (분)" type="number" min={0} max={1440} value={minutes} onChange={e => setMinutes(Number(e.target.value))} /></label>
-        <p>분 미만은 기본값에서 제외해요. 관측 이후 시간은 자동으로 더하지 않아요.</p>
-        <button disabled={busy || paused} onClick={() => void recover()}>시간 확인하고 계획 복구</button>
+        <label>실제 이탈 시간 (분)<input aria-label="실제 이탈 시간 (분)" type="number" min={0} max={1440} value={minutes} onChange={e => setMinutes(e.target.value)} /></label>
+        <p>{inactivity ? "실제로 딴짓한 시간만 입력해 주세요. 이번 확인은 기기 안에서 처리돼요." : "분 미만은 기본값에서 제외해요. 관측 이후 시간은 자동으로 더하지 않아요."}</p>
+        <button disabled={busy || paused || (inactivity && !minutes)} onClick={() => void recover()}>{inactivity ? "시간 확인하고 공부로 복귀" : "시간 확인하고 계획 복구"}</button>
         <button disabled={busy} onClick={() => setEditing(false)}>다시 선택</button>
       </> : <>
-        <button disabled={busy || paused} onClick={() => { setMinutes(Math.min(1440, Math.floor(incident.seconds / 60))); setEditing(true); }}>맞아, 딴짓했어</button>
-        <button disabled={busy} onClick={() => void respond("studying")}>아니, 공부 중이었어</button>
+        <button disabled={busy || paused} onClick={() => { setMinutes(inactivity ? "" : String(Math.min(1440, Math.floor(incident.seconds / 60)))); setEditing(true); }}>맞아, 딴짓했어</button>
+        <button disabled={busy} onClick={() => void respond("studying")}>{inactivity ? "공부 중이야" : "아니, 공부 중이었어"}</button>
         <button disabled={busy} onClick={() => void respond("break")}>잠깐 쉬는 중이야</button>
       </>}
     </>}

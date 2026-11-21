@@ -6,6 +6,7 @@ export const isDesktop = () => isTauri();
 export type MainTarget = "plan" | "input";
 export interface WidgetLayout {
   open: boolean;
+  automatic?: boolean;
   petX: number;
   petY: number;
   width: number;
@@ -66,7 +67,8 @@ export async function concealWidget(minimize: boolean): Promise<void> {
 
 export const nativeWidget = {
   readLayout: () => invoke<WidgetLayout>("widget_read_layout"),
-  bubble: (open: boolean) => invoke<WidgetLayout>("widget_bubble", { open }),
+  bubble: (open: boolean, automatic = false) => invoke<WidgetLayout>("widget_bubble", { open, automatic }),
+  interact: () => invoke<void>("widget_interact"),
   drag: () => invoke<void>("widget_drag"),
   listenLayout: (callback: (layout: WidgetLayout) => void) =>
     listen<WidgetLayout>("widget-layout", (event) => callback(event.payload)),

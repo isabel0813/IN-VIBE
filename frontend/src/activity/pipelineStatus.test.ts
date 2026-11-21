@@ -3,7 +3,7 @@ import { activityStatus, browserStatus } from "./pipelineStatus";
 const session = { running: true, paused: false, task: { id: 1_000_000_000_023 } };
 const browser = { consent: true, connected: true, collecting: true, observing: true };
 it("does not mislabel a cloud session with monitoring=false as waiting", () => {
-  expect(activityStatus(true, false, "미분류", session, true)).toContain("로컬 이탈 판단 제외");
+  expect(activityStatus(true, false, "미분류", session, true)).toBe("한 줄 세션 · 무입력 확인 중");
 });
 it("distinguishes stopped, paused and not-yet-synchronized sessions", () => {
   expect(activityStatus(true, false, "", { ...session, running: false }, true)).toBe("세션 대기");

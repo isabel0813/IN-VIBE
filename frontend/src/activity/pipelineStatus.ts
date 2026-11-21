@@ -6,8 +6,7 @@ export function activityStatus(consent: boolean, monitoring: boolean, category: 
   if (!ready) return "세션 상태 확인 중";
   if (!session.running) return "세션 대기";
   if (session.paused) return "일시정지";
-  // Cloud sessions deliberately stop the local detector; this is not a missing session.
-  if (session.task && session.task.id >= 1_000_000_000_000) return "한 줄 세션 · 로컬 이탈 판단 제외";
+  if (session.task && session.task.id >= 1_000_000_000_000) return "한 줄 세션 · 무입력 확인 중";
   return monitoring ? category : "관측 상태 확인 중";
 }
 

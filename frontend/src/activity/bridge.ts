@@ -5,6 +5,7 @@ import { isDesktop } from "../desktop/bridge";
 
 export interface Incident {
   id: number; startedAt: number; seconds: number; process: string; title: string; claimed: boolean;
+  kind?: "window" | "inactivity"; stage?: number;
 }
 export interface ActivityConfig {
   consent: boolean; thresholdSeconds: number; relatedTerms: string[]; suspectTerms: string[];
@@ -22,7 +23,8 @@ export const emptyActivity: Activity = {
 export const activityApi = {
   read: () => invoke<Activity>("activity_read"),
   configure: (config: ActivityConfig) => invoke<Activity>("activity_configure", { config }),
-  respond: (id: number, choice: "review" | "claim" | "studying" | "break" | "resolved") => invoke<Activity>("activity_respond", { id, choice }),
+  respond: (id: number, choice: "review" | "claim" | "studying" | "break" | "resolved" | "confirm_local" | "return", confirmedMinutes?: number) =>
+    invoke<Activity>("activity_respond", confirmedMinutes === undefined ? { id, choice } : { id, choice, confirmedMinutes }),
 };
 export function useActivity() {
   const [value, setValue] = useState(emptyActivity);

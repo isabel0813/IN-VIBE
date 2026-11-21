@@ -1,8 +1,10 @@
 export type Video = { title: string; video_id: string };
 import type { InterventionStage } from "./intervention";
 export type CloudState = { id: number; task: string; ask: Video | null; reason: string; stage?: InterventionStage };
-type Snapshot = { value: CloudState | null; dismissed: string[] };
-type Message = { type: "reset" | "state" | "read" | "dismiss" | "change" | "changed"; owner?: string; revision?: number; request?: string; snapshot?: Snapshot; session?: number; video?: string; task?: string; error?: string };
+export type ResponseMode = "return" | "study";
+export type VideoResponse = { video: string; mode: ResponseMode; at: number };
+type Snapshot = { value: CloudState | null; dismissed: VideoResponse[] };
+type Message = { type: "reset" | "state" | "read" | "dismiss" | "change" | "changed"; owner?: string; revision?: number; request?: string; snapshot?: Snapshot; session?: number; video?: string; mode?: ResponseMode; task?: string; error?: string };
 type ChangeHandler = (task: string) => Promise<boolean>;
 export interface MemoryPort {
   postMessage(message: Message): void;
@@ -46,18 +48,19 @@ export function createCloudMemory(owner: boolean, port?: MemoryPort) {
     publish();
     sendState();
   }
-  function dismiss(session: number, video: string) {
+  function dismiss(session: number, video: string, mode: ResponseMode) {
     if (snapshot.value?.id !== session) return;
     const value = snapshot.value;
+    if (value.ask?.video_id !== video && mode !== "study") return;
     snapshot = { value: value.ask?.video_id === video ? { ...value, ask: null, reason: "", stage: undefined } : value,
-      dismissed: [...new Set([...snapshot.dismissed, video])] };
+      dismissed: [...snapshot.dismissed.filter(item => item.video !== video), { video, mode, at: Date.now() }] };
     revision++;
     publish();
     sendState();
   }
-  function request(type: "read" | "dismiss", session?: number, video?: string) {
+  function request(type: "read" | "dismiss", session?: number, video?: string, mode: ResponseMode = "return") {
     if (owner) {
-      if (type === "dismiss" && session !== undefined && video) dismiss(session, video);
+      if (type === "dismiss" && session !== undefined && video) dismiss(session, video, mode);
       return Promise.resolve();
     }
     if (!port) return Promise.reject(new Error("메모리 동기화를 사용할 수 없어요. 메인 화면에서 확인해 주세요."));
@@ -65,7 +68,7 @@ export function createCloudMemory(owner: boolean, port?: MemoryPort) {
       const id = crypto.randomUUID();
       const timer = setTimeout(() => { pending.delete(id); reject(new Error("메인 화면과 상태를 동기화하지 못했어요.")); }, 2000);
       pending.set(id, { resolve, timer });
-      port.postMessage({ type, request: id, session, video });
+      port.postMessage({ type, request: id, session, video, mode });
     });
   }
   if (port) port.onmessage = ({ data }) => {
@@ -78,7 +81,7 @@ export function createCloudMemory(owner: boolean, port?: MemoryPort) {
           (e: unknown) => port?.postMessage({ type: "changed", request, error: e instanceof Error ? e.message : String(e) }));
         return;
       }
-      if (data.type === "dismiss" && typeof data.session === "number" && typeof data.video === "string") dismiss(data.session, data.video);
+      if (data.type === "dismiss" && typeof data.session === "number" && typeof data.video === "string") dismiss(data.session, data.video, data.mode === "study" ? "study" : "return");
       if (data.type === "read" || data.type === "dismiss") sendState(data.request);
       return;
     }
@@ -102,9 +105,10 @@ export function createCloudMemory(owner: boolean, port?: MemoryPort) {
   };
   return {
     read: () => snapshot.value,
-    dismissed: () => snapshot.dismissed,
+    dismissed: () => snapshot.dismissed.map(item => item.video),
+    responses: () => snapshot.dismissed,
     set,
-    dismiss: (session: number, video: string) => request("dismiss", session, video),
+    dismiss: (session: number, video: string, mode?: ResponseMode) => request("dismiss", session, video, mode),
     refresh: () => request("read"),
     change: requestChange,
     /** 메인 화면 컨트롤러만 등록한다. 해제 함수를 돌려준다. */

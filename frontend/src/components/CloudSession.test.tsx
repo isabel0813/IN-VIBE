@@ -34,9 +34,9 @@ async function start(consent=true) {
 }
 it("starts one-line session, asks from actual observation, sends correction, and ends", async () => {
   const fetchMock=transport("ask"); await start();
-  await screen.findByText("안뇽이 · 너 혹시 딴짓해?");
-  fireEvent.click(screen.getByRole("button",{name:"아니? 전혀~"}));
-  await waitFor(() => expect(screen.queryByText("안뇽이 · 너 혹시 딴짓해?")).toBeNull());
+  await screen.findByLabelText("YouTube 활동 확인");
+  fireEvent.click(screen.getByRole("button",{name:"공부 중인데?"}));
+  await waitFor(() => expect(screen.queryByLabelText("YouTube 활동 확인")).toBeNull());
   fireEvent.click(screen.getByRole("button",{name:"세션 종료"}));
   await waitFor(() => expect(fetchMock.mock.calls.map(c=>new URL(c[0]).pathname)).toEqual(["/sessions","/judge","/judge/feedback","/sessions/7/end"]));
   expect(JSON.parse((fetchMock.mock.calls[1] as unknown as [string,RequestInit])[1].body as string)).toEqual({session_id:7,title:"Minecraft gameplay",video_id:"gBGM0l4hulw"});
@@ -44,7 +44,7 @@ it("starts one-line session, asks from actual observation, sends correction, and
 it("ignore never shows a confirmation", async () => {
   const fetchMock=transport("ignore"); await start();
   await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-  expect(screen.queryByText("안뇽이 · 너 혹시 딴짓해?")).toBeNull();
+  expect(screen.queryByLabelText("YouTube 활동 확인")).toBeNull();
 });
 it("does not send titles without separate AI consent", async () => {
   const fetchMock=transport("ask"); await start(false);
@@ -58,15 +58,15 @@ it("excludes background music before contacting judge", async () => {
   await start();
   await waitFor(()=>expect(mocks.invoke).toHaveBeenCalled());
   expect(fetchMock).toHaveBeenCalledTimes(1);
-  expect(screen.queryByText("안뇽이 · 너 혹시 딴짓해?")).toBeNull();
+  expect(screen.queryByLabelText("YouTube 활동 확인")).toBeNull();
 });
 it("clears a paused/hidden video's question and reuses its result when visible again", async () => {
   const fetchMock=transport("ask"); await start();
-  await screen.findByText("안뇽이 · 너 혹시 딴짓해?");
+  await screen.findByLabelText("YouTube 활동 확인");
   mocks.invoke.mockResolvedValue([]);
-  await waitFor(()=>expect(screen.queryByText("안뇽이 · 너 혹시 딴짓해?")).toBeNull(),{timeout:2200});
+  await waitFor(()=>expect(screen.queryByLabelText("YouTube 활동 확인")).toBeNull(),{timeout:2200});
   mocks.invoke.mockResolvedValue([{title:"Minecraft gameplay",videoId:"gBGM0l4hulw"}]);
-  await screen.findByText("안뇽이 · 너 혹시 딴짓해?",{}, {timeout:2200});
+  await screen.findByLabelText("YouTube 활동 확인",{}, {timeout:2200});
   expect(fetchMock).toHaveBeenCalledTimes(2);
 });
 it("retains a slow judgment while the video is hidden, without stale intervention or repeated API calls", async () => {
@@ -77,16 +77,16 @@ it("retains a slow judgment while the video is hidden, without stale interventio
   mocks.invoke.mockResolvedValue([]);
   finish(new Response(JSON.stringify({action:'ask',reason:'게임 영상'})));
   await waitFor(()=>expect(mocks.invoke.mock.calls.length).toBeGreaterThan(1));
-  expect(screen.queryByText("안뇽이 · 너 혹시 딴짓해?")).toBeNull();
+  expect(screen.queryByLabelText("YouTube 활동 확인")).toBeNull();
   mocks.invoke.mockResolvedValue([{title:"Minecraft gameplay",videoId:"gBGM0l4hulw"}]);
-  await screen.findByText("안뇽이 · 너 혹시 딴짓해?",{}, {timeout:2200});
+  await screen.findByLabelText("YouTube 활동 확인",{}, {timeout:2200});
   expect(fetchMock).toHaveBeenCalledTimes(2);
 });
 it("does not show an ask for an explicit background category", async () => {
   const fetchMock=vi.fn(async(url:string)=>new Response(JSON.stringify(url.endsWith('/sessions')?{id:7,task:'공부'}:{action:'ask',category:'background',reason:'배경음악'})));
   vi.stubGlobal('fetch',fetchMock); await start();
   await waitFor(()=>expect(fetchMock).toHaveBeenCalledTimes(2));
-  expect(screen.queryByText("안뇽이 · 너 혹시 딴짓해?")).toBeNull();
+  expect(screen.queryByLabelText("YouTube 활동 확인")).toBeNull();
 });
 it("retains failed corrections for an explicit retry", async () => {
   let feedbackCalls=0;
@@ -94,12 +94,12 @@ it("retains failed corrections for an explicit retry", async () => {
     if(url.endsWith('/feedback')) return new Response('{}',{status:++feedbackCalls===1?500:200});
     return new Response(JSON.stringify(url.endsWith('/sessions')?{id:7,task:'공부'}:{action:'ask',reason:'게임'}));
   }));
-  await start(); await screen.findByText("안뇽이 · 너 혹시 딴짓해?");
-  fireEvent.click(screen.getByRole('button',{name:'아니? 전혀~'}));
+  await start(); await screen.findByLabelText("YouTube 활동 확인");
+  fireEvent.click(screen.getByRole('button',{name:'공부 중인데?'}));
   await screen.findByRole('alert');
-  expect(screen.queryByText("안뇽이 · 너 혹시 딴짓해?")).not.toBeNull();
-  fireEvent.click(screen.getByRole('button',{name:'아니? 전혀~'}));
-  await waitFor(()=>expect(screen.queryByText("안뇽이 · 너 혹시 딴짓해?")).toBeNull());
+  expect(screen.queryByLabelText("YouTube 활동 확인")).not.toBeNull();
+  fireEvent.click(screen.getByRole('button',{name:'공부 중인데?'}));
+  await waitFor(()=>expect(screen.queryByLabelText("YouTube 활동 확인")).toBeNull());
   expect(feedbackCalls).toBe(2);
 });
 
@@ -109,27 +109,27 @@ it("a late feedback response cannot overwrite a different video's question", asy
   let finish!: (response:Response)=>void;
   vi.stubGlobal('fetch',vi.fn(()=>new Promise<Response>(resolve=>{finish=resolve;})));
   cloudMemory.set(first); render(<CloudQuestion />);
-  fireEvent.click(screen.getByRole('button',{name:'아니? 전혀~'}));
+  fireEvent.click(screen.getByRole('button',{name:'공부 중인데?'}));
   await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
   cloudMemory.set(second);
   await screen.findByText('second gameplay');
   finish(new Response('{}'));
-  await waitFor(()=>expect((screen.getByRole('button',{name:'아니? 전혀~'}) as HTMLButtonElement).disabled).toBe(false));
+  await waitFor(()=>expect((screen.getByRole('button',{name:'공부 중인데?'}) as HTMLButtonElement).disabled).toBe(false));
   expect(cloudMemory.read()!.ask!.video_id).toBe('zyxwvutsrqp');
   expect(cloudMemory.dismissed()).toContain('abcdefghijk');
 });
 
 it("clears the previous question when native observation fails", async () => {
   transport('ask'); await start();
-  await screen.findByText('안뇽이 · 너 혹시 딴짓해?');
+  await screen.findByLabelText('YouTube 활동 확인');
   mocks.invoke.mockRejectedValue(new Error('IPC disconnected'));
   await screen.findByRole('alert',{}, {timeout:2200});
-  expect(screen.queryByText('안뇽이 · 너 혹시 딴짓해?')).toBeNull();
+  expect(screen.queryByLabelText('YouTube 활동 확인')).toBeNull();
 });
 it("removes session video IDs and cached state after session end", async () => {
   transport('ask'); await start();
-  await screen.findByText('안뇽이 · 너 혹시 딴짓해?');
-  fireEvent.click(screen.getByRole('button',{name:'맞아, 공부로 돌아갈게'}));
+  await screen.findByLabelText('YouTube 활동 확인');
+  fireEvent.click(screen.getByRole('button',{name:'돌아갈게...'}));
   await waitFor(()=>expect(cloudMemory.dismissed()).not.toHaveLength(0));
   fireEvent.click(screen.getByRole('button',{name:'세션 종료'}));
   await waitFor(()=>expect(localStorage.getItem('mobonyong.cloud-session')).toBeNull());
@@ -158,9 +158,9 @@ it("serializes feedback across two question views using the origin lock", async 
   cloudMemory.set({id:7,task:'공부',ask:{title:'gameplay',video_id:'abcdefghijk'},reason:'게임'});
   try {
     render(<><CloudQuestion /><CloudQuestion /></>);
-    const buttons=screen.getAllByRole('button',{name:'아니? 전혀~'});
+    const buttons=screen.getAllByRole('button',{name:'공부 중인데?'});
     fireEvent.click(buttons[0]); fireEvent.click(buttons[1]);
-    await waitFor(()=>expect(screen.queryAllByRole('button',{name:'아니? 전혀~'})).toHaveLength(0));
+    await waitFor(()=>expect(screen.queryAllByRole('button',{name:'공부 중인데?'})).toHaveLength(0));
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(requests).toHaveLength(2);
     expect(requests[0]).toBe(requests[1]);

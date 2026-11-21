@@ -2,26 +2,31 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { CloudQuestion, UltimateOverlay, useCloudController } from "./components/CloudSession";
 import Icon from "./components/Icon";
 import ActivityControls from "./activity/ActivityControls";
+import { useActivity } from "./activity/bridge";
 import { isDesktop, onNavigate, showWidget } from "./desktop/bridge";
 import { sessionStore, useFocusSession } from "./session/store";
 import { setBreakUntil, useAutoResume } from "./session/breakTimer";
 import { annyongArt } from "./widget/character";
 import { WebWidgetPreview } from "./widget/Widget";
+import { ReplyNotice, useReply, useTone } from "./components/persona";
 
 const LegacyPlanner = lazy(() => import("./LegacyPlanner"));
 type View = "focus" | "settings" | "legacy";
 
 export default function App() {
+  const [tone, setTone] = useTone();
+  const reply = useReply();
   const [view, setView] = useState<View>("focus");
   const [menuOpen, setMenuOpen] = useState(false);
   // 위젯의 "할 일 바꾸기"로 들어오면 입력칸을 다시 열어 새 할 일을 받는다.
   const [changing, setChanging] = useState(false);
   const taskInput = useRef<HTMLInputElement>(null);
-  const focus = useCloudController();
+  const { activity } = useActivity();
+  const focus = useCloudController(activity);
   const { error: syncError } = useFocusSession();
   const [windowError, setWindowError] = useState("");
   const { session, value, task, setTask, ready, busy, error } = focus;
-  const ultimate = value?.stage === 3 && !!value.ask;
+  const ultimate = (value?.stage === 3 && !!value.ask) || !!focus.inactivityUltimate;
   // 위젯에서 정한 쉬는 시간이 끝나면 메인 창이 세션을 다시 시작한다.
   useAutoResume();
 
@@ -98,7 +103,7 @@ export default function App() {
         </div>}
         <section className="home-hero" aria-label="한 줄 집중 세션" hidden={view !== "focus"}>
           <div className="hero-character"><img src={annyongArt} alt="안뇽이 캐릭터" /></div>
-          <h1>{session.running ? "지금은 이거 하는 중이뇽" : "오늘은 뭘 해야 하뇽?"}</h1>
+          <h1>{session.running ? "지금 집중하는 목표" : "오늘 끝낼 일은?"}</h1>
           <p className="hero-sub">{session.running ? "잠깐 돌아와도 괜찮아. 준비되면 이어서 하자." : "자세히 적을수록 안뇽이가 더 잘 알아볼 수 있어!"}</p>
           <form className="hero-form" onSubmit={event => { event.preventDefault(); void (changing ? changeTask() : focus.start()); }}>
             <div className="hero-input">
@@ -120,6 +125,7 @@ export default function App() {
           </div>}
           {!isDesktop() && <p className="hero-note">웹 미리보기 · 독립 위젯과 YouTube 관측은 Windows 앱에서 사용할 수 있어요.</p>}
           <CloudQuestion />
+          {!value?.ask && !activity.incident && reply && session.task && <ReplyNotice mode={reply.mode} task={session.task.name} />}
         </section>
         <section className="focus-settings-content" aria-label="집중 설정" hidden={view !== "settings"}>
           <div className="page-head">
@@ -129,6 +135,11 @@ export default function App() {
           <label className="hero-consent"><input type="checkbox" checked={focus.consent} onChange={event => focus.setConsent(event.target.checked)} /><span>AI 판단에 동의합니다. 작업명과 관측한 영상 제목·ID를 API로 보내며 AI가 제목을 분류합니다.</span></label>
           <p className="hero-note">Windows 활동 감지와 YouTube 연결에도 각각 동의해야 영상 판단이 시작돼요. AI 동의는 체크를 풀기 전까지 유지돼요.</p>
           <ActivityControls />
+          <fieldset className="tone-settings">
+            <legend>안뇽이 말투</legend>
+            <label><input type="radio" name="annyong-tone" checked={tone === "default"} onChange={() => setTone("default")} /> 기본 · 욕설 없는 독설</label>
+            <label><input type="radio" name="annyong-tone" checked={tone === "hardcore"} onChange={() => setTone("hardcore")} /> 하드코어 · 욕설과 과장된 농담</label>
+          </fieldset>
           {!isDesktop() && <p className="hero-note">Windows 활동 감지는 데스크톱 앱에서 설정할 수 있어요.</p>}
           <details className="legacy-access"><summary>기존 작업 데이터</summary><p>이전에 등록한 작업은 기존 화면에서 확인할 수 있어요.</p>
             <button className="secondary" disabled={busy || session.running || !!value} onClick={() => navigate("legacy")}>기존 작업 보기</button>
@@ -138,6 +149,6 @@ export default function App() {
     </div>
     {view === "legacy" && <><div className="legacy-return"><button className="text-button" onClick={() => navigate("focus")}>한 줄 집중 화면으로</button></div><Suspense fallback={<p role="status">기존 작업 화면을 불러오고 있어요.</p>}><LegacyPlanner embedded /></Suspense></>}
     {!isDesktop() && <WebWidgetPreview />}
-    <UltimateOverlay onEnd={() => void end()} />
+    <UltimateOverlay onEnd={() => void end()} inactivity={focus.inactivityUltimate} />
   </>;
 }
