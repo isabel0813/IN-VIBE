@@ -1,9 +1,13 @@
 from datetime import datetime, timedelta
+from io import BytesIO
+from urllib.error import HTTPError
 from zoneinfo import ZoneInfo
 
 import pytest
+from fastapi.testclient import TestClient
 
 from app import db, judge, metrics, nlp
+from app.main import app, get_conn
 
 KST = ZoneInfo("Asia/Seoul")
 T0 = datetime(2026, 11, 13, 20, 0, tzinfo=KST)
@@ -47,6 +51,43 @@ def conn(tmp_path):
     c = db.connect(str(tmp_path / "j.db"))
     yield c
     c.close()
+
+
+def test_provider_400_becomes_safe_judge_502(tmp_path, monkeypatch, caplog):
+    path = str(tmp_path / "judge-http.db")
+    user = "synthetic-user"
+    with db.connect(path) as setup:
+        session = db.start_session(setup, user, "synthetic focus task")
+
+    def connect():
+        conn = db.connect(path)
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    def reject(req, **kwargs):
+        raise HTTPError(req.full_url, 400, "Bad Request", None, BytesIO(b"synthetic private input"))
+
+    monkeypatch.setitem(app.dependency_overrides, get_conn, connect)
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-test-key")
+    monkeypatch.setattr(nlp.urllib.request, "urlopen", reject)
+    with TestClient(app) as client:
+        response = client.post("/judge", headers={"X-User-Id": user}, json={
+            "session_id": session["id"],
+            "title": "synthetic private input",
+            "video_id": "testVideo01",
+        })
+    assert response.status_code == 502
+    assert response.json() == {"detail": "AI가 영상 판단을 완료하지 못했어요"}
+    assert [record.message for record in caplog.records if record.name == "app.main"] == [
+        "Video judgment provider HTTP status: 400"
+    ]
+    with db.connect(path) as saved:
+        failed = [event for event in db.all_events(saved) if event["type"] == "judge_failed"]
+        assert [event["payload"] for event in failed] == [{"session_id": session["id"]}]
+        assert db.session_ai_calls(saved, session["id"]) == 0
 
 
 def test_session_and_judgment_roundtrip(conn):
