@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { api } from "../api/client";
+import { api, ApiError, ApiTransportError } from "../api/client";
 import { isDesktop, showWidget } from "../desktop/bridge";
 import { sessionStore, useFocusSession } from "../session/store";
 import { backgroundVideo, shouldAsk } from "./videoPolicy";
@@ -14,6 +14,12 @@ import { announceReply, interventionLine, ResponseButtons, useTone } from "./per
 import { cloudMemory, removeLegacyCloudData } from "./cloudMemory";
 import type { CloudState, ResponseMode, VideoResponse } from "./cloudMemory";
 const TASK_OFFSET = 1_000_000_000_000;
+const JUDGMENT_BACKOFF = [5000, 15000, 30000];
+type JudgmentFailure = { attempts: number; retryAt: number };
+function canRetryJudgment(error: unknown) {
+  return error instanceof ApiTransportError ||
+    (error instanceof ApiError && error.retryable && [502, 503, 504].includes(error.status));
+}
 function read(): CloudState | null { return cloudMemory.read(); }
 function write(value: CloudState | null) { cloudMemory.set(value); }
 async function dismiss(value: CloudState, mode: ResponseMode) {
@@ -125,11 +131,13 @@ export function useCloudController(activity?: Activity) {
   const setConsent = (next: boolean) => { setConsentState(next); writeConsent(next); };
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const judgments = useRef(new Map<string, Judgment | null>());
+  const judgments = useRef(new Map<string, Judgment>());
+  const judgmentFailures = useRef(new Map<string, JudgmentFailure>());
+  const limitedSession = useRef<number | null>(null);
+  const [judgmentError, setJudgmentError] = useState("");
   const appliedResponses = useRef(new Map<string, VideoResponse>());
   const startLock = useRef(false);
   const active = useRef<number | null>(null);
-  const observationEpoch = useRef(0);
   const clock = useRef(new InterventionClock(escalation));
   const inactivityUltimate = activity?.consent && activity.incident?.kind === "inactivity" && activity.incident.stage === 3
     && session.running && !session.paused && !value?.ask ? activity.incident : null;
@@ -150,7 +158,8 @@ export function useCloudController(activity?: Activity) {
   }, [ready, session.running, session.task?.id, value]);
   useEffect(() => {
     active.current = value?.id ?? null;
-    if (!value || !consent || activity?.consent === false) { observationEpoch.current++; judgments.current.clear(); appliedResponses.current.clear(); clock.current.clear(); }
+    setJudgmentError("");
+    if (!value || !consent || activity?.consent === false) { judgments.current.clear(); judgmentFailures.current.clear(); appliedResponses.current.clear(); clock.current.clear(); }
     if (!value || !consent || activity?.consent === false || !isDesktop() || !session.running || session.paused) {
       clock.current.pause();
       if (value?.ask || value?.reason || value?.stage) write({ ...value, ask: null, reason: "", stage: undefined });
@@ -159,6 +168,14 @@ export function useCloudController(activity?: Activity) {
     let cancelled = false;
     let reading = false;
     const id = value.id;
+    const pending = new Map<string, AbortController>();
+    function cancelUnseen(visible?: Set<string>) {
+      for (const [key, controller] of pending) {
+        if (visible?.has(key)) continue;
+        pending.delete(key);
+        controller.abort();
+      }
+    }
     async function poll() {
       if (reading) return;
       reading = true;
@@ -166,9 +183,10 @@ export function useCloudController(activity?: Activity) {
         const native = await invoke<{ consent: boolean; collecting: boolean }>("browser_read");
         if (cancelled || active.current !== id || read()?.id !== id) return;
         if (!native.consent || !native.collecting) {
-          observationEpoch.current++;
-          for (const [key, result] of judgments.current) if (!result || !native.consent) judgments.current.delete(key);
+          cancelUnseen();
           if (!native.consent) {
+            judgments.current.clear();
+            judgmentFailures.current.clear();
             appliedResponses.current.clear();
             clock.current.clear();
           } else clock.current.pause();
@@ -179,12 +197,14 @@ export function useCloudController(activity?: Activity) {
         // At stage 3 the app itself can cover Chrome. Keep the selected question
         // and continue checking consent/connection without measuring covered time.
         if (read()?.stage === 3 || idleFullscreen.current) {
+          cancelUnseen();
           clock.current.pause();
           return;
         }
         const videos = await invoke<{ title: string; videoId: string }[]>("browser_videos");
         if (cancelled || active.current !== id || read()?.id !== id) return;
         if (idleFullscreen.current) {
+          cancelUnseen();
           clock.current.pause();
           return;
         }
@@ -195,19 +215,42 @@ export function useCloudController(activity?: Activity) {
           }
         }
         const eligible = videos.filter(video => !backgroundVideo(video.title));
+        cancelUnseen(new Set(eligible.map(video => `${id}:${video.videoId}`)));
         for (const video of eligible) {
           const key = `${id}:${video.videoId}`;
-          if (judgments.current.has(key)) continue;
-          judgments.current.set(key, null);
-          const epoch = observationEpoch.current;
-          // Keep sampling during slow AI requests so hidden/paused videos dismiss
-          // immediately. A cached result can be used when a video becomes visible again.
-          void api.judge(id, { title: video.title, video_id: video.videoId }).then(result => {
-            if (cancelled || active.current !== id || observationEpoch.current !== epoch) return;
+          const failure = judgmentFailures.current.get(key);
+          if (limitedSession.current === id || judgments.current.has(key) || pending.has(key) || (failure && Date.now() < failure.retryAt)) continue;
+          const attempts = (failure?.attempts ?? 0) + 1;
+          judgmentFailures.current.set(key, {
+            attempts, retryAt: attempts > JUDGMENT_BACKOFF.length ? Infinity : (failure?.retryAt ?? 0),
+          });
+          const controller = new AbortController();
+          pending.set(key, controller);
+          const isCurrent = () => !cancelled && read()?.id === id && pending.get(key) === controller;
+          // A retry starts only from a fresh eligible-video sample.
+          void api.judge(id, { title: video.title, video_id: video.videoId }, controller.signal).then(result => {
+            if (!isCurrent()) return;
             if (result.action !== "ask" && result.action !== "ignore") throw new Error("AI 응답 형식을 확인해 주세요.");
             judgments.current.set(key, result);
-            if (!cancelled) void poll();
-          }).catch(e => { if (!cancelled) setError(`영상 판단 실패 · 자동 재시도 중지. ${String(e)}`); });
+            judgmentFailures.current.delete(key);
+            setJudgmentError("");
+          }).catch(e => {
+            if (!isCurrent()) return;
+            if (e instanceof ApiError && e.status === 429) {
+              limitedSession.current = id;
+              setJudgmentError("이 세션의 AI 판단 횟수를 다 썼어요. 새 세션에서 다시 사용할 수 있어요.");
+              return;
+            }
+            const delay = canRetryJudgment(e) ? JUDGMENT_BACKOFF[attempts - 1] : undefined;
+            judgmentFailures.current.set(key, { attempts, retryAt: delay === undefined ? Infinity : Date.now() + delay });
+            setJudgmentError(delay === undefined
+              ? `영상 판단 실패 · 자동 재시도 중지. ${String(e)}`
+              : `영상 판단 연결이 불안정해요. ${delay / 1000}초 뒤 다시 시도합니다.`);
+          }).finally(() => {
+            if (!isCurrent()) return;
+            pending.delete(key);
+            if (judgments.current.has(key)) void poll();
+          });
         }
         const current = read()!;
         const suspicious = eligible.filter(video => {
@@ -225,6 +268,7 @@ export function useCloudController(activity?: Activity) {
         const stage = next ? clock.current.stage(next.videoId) || undefined : undefined;
         if (current.ask?.video_id !== ask?.video_id || current.stage !== stage) write({ ...current, ask, stage, reason: next ? judgments.current.get(`${id}:${next.videoId}`)!.reason : "" });
       } catch (e) {
+        cancelUnseen();
         clock.current.pause();
         if (!cancelled) {
           const current = read();
@@ -235,7 +279,7 @@ export function useCloudController(activity?: Activity) {
       finally { reading = false; }
     }
     void poll(); const timer = setInterval(() => void poll(), 1000);
-    return () => { cancelled = true; clearInterval(timer); clock.current.pause(); };
+    return () => { cancelled = true; clearInterval(timer); cancelUnseen(); clock.current.pause(); };
   }, [value?.id, consent, activity?.consent, session.running, session.paused]);
   const youtubeUltimate = consent && activity?.consent !== false && session.running && !session.paused && value?.stage === 3 ? value.ask?.video_id : undefined;
   const inactivityId = inactivityUltimate?.id;
@@ -267,7 +311,7 @@ export function useCloudController(activity?: Activity) {
     try {
       created = await api.startSession(task.trim());
       await sessionStore.send({ type: "start", task: { id: TASK_OFFSET + created.id, name: created.task } });
-      judgments.current.clear(); appliedResponses.current.clear(); clock.current.clear();
+      judgments.current.clear(); judgmentFailures.current.clear(); appliedResponses.current.clear(); clock.current.clear();
       write({ ...created, ask: null, reason: "" });
       await showWidget(true);
     } catch (e) {
@@ -294,7 +338,7 @@ export function useCloudController(activity?: Activity) {
       await sessionStore.send({ type: "end" });
       created = await api.startSession(name);
       await sessionStore.send({ type: "start", task: { id: TASK_OFFSET + created.id, name: created.task } });
-      judgments.current.clear(); appliedResponses.current.clear(); clock.current.clear();
+      judgments.current.clear(); judgmentFailures.current.clear(); appliedResponses.current.clear(); clock.current.clear();
       write({ ...created, ask: null, reason: "" });
       setTask("");
       if (!options.stayInWidget) await showWidget(true);
@@ -321,7 +365,7 @@ export function useCloudController(activity?: Activity) {
     catch (e) { failures.push(`서버 세션 종료를 확인하지 못했어요. ${String(e)}`); }
     setError(failures.join(" ")); setBusy(false);
   }
-  return { value, session, ready, task, setTask, consent, setConsent, busy, error, start, change, end, inactivityUltimate: isDesktop() ? inactivityUltimate : null };
+  return { value, session, ready, task, setTask, consent, setConsent, busy, error: error || judgmentError, start, change, end, inactivityUltimate: isDesktop() ? inactivityUltimate : null };
 }
 
 // Retained as a small standalone view for existing integrations/tests. App uses

@@ -20,7 +20,7 @@
       "devCsp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; connect-src ipc: http://ipc.localhost https://api.mobonyong.com; object-src 'none'; frame-src 'none'"
     }
   },
-  "version": "0.3.4",
+  "version": "0.3.5",
   "identifier": "io.invibe.annyong.beta",
   "productName": "Mobonyong Tester Beta"
 }

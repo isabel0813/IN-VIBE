@@ -108,4 +108,18 @@ describe("API transport", () => {
     await vi.advanceTimersByTimeAsync(15000);
     await request;
   });
+  it("distinguishes a retryable judgment timeout from explicit cancellation", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn((_url, options: RequestInit) =>
+      new Promise((_resolve, reject) => options.signal?.addEventListener("abort", () =>
+        reject(new DOMException("Aborted", "AbortError"))))));
+    const video = { title: "합성 영상", video_id: "abcdefghijk" };
+    const timedOut = expect(api.judge(1, video)).rejects.toMatchObject({ kind: "timeout" });
+    await vi.advanceTimersByTimeAsync(45000);
+    await timedOut;
+    const controller = new AbortController();
+    const cancelled = expect(api.judge(1, video, controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+    controller.abort();
+    await cancelled;
+  });
 });

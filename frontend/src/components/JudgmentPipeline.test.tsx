@@ -30,7 +30,7 @@ import { cloudMemory } from "./cloudMemory";
 
 const key = "mobonyong.cloud-session";
 const game = { title: "합성 게임 플레이", videoId: "abcdefghijk" };
-let requests: { path: string; body: Record<string, unknown> }[];
+let requests: { path: string; body: Record<string, unknown>; at: number; signal?: AbortSignal | null }[];
 let respond: (path: string) => Promise<Response>;
 beforeEach(() => {
   vi.resetAllMocks();
@@ -48,14 +48,15 @@ beforeEach(() => {
   respond = async path => Response.json(path === "/sessions" ? { id: 23, task: "전자기 유도 공부" } : { action: "ask", category: "other", reason: "합성 판단" });
   vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
     const path = new URL(url).pathname;
-    requests.push({ path, body: JSON.parse(String(init.body)) });
+    requests.push({ path, body: JSON.parse(String(init.body)), at: Date.now(), signal: init.signal });
     return respond(path);
   }));
-  // Only the sampling interval is virtual. No request reaches a real server.
-  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  // No request reaches a real server.
+  vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
-const sample = async () => { await act(async () => { await vi.advanceTimersByTimeAsync(1000); }); };
+const advance = async (ms: number) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); };
+const sample = () => advance(1000);
 const judging = () => requests.filter(request => request.path === "/judge");
 async function start(widget = false) {
   const view = render(<><CloudSession />{widget && <Widget native={false} />}</>);
@@ -182,7 +183,7 @@ describe("synthetic judgment pipeline", () => {
     expect(screen.queryByLabelText("YouTube 활동 확인")).toBeNull();
     expect(judging()).toHaveLength(2);
     const feedback = requests.filter(request => request.path === "/judge/feedback");
-    expect(feedback).toEqual([{ path: "/judge/feedback", body: { session_id: 23, title: game.title, video_id: game.videoId } }]);
+    expect(feedback).toMatchObject([{ path: "/judge/feedback", body: { session_id: 23, title: game.title, video_id: game.videoId } }]);
   });
   it("acknowledges distraction, keeps focus running, and suppresses a repeat for the same video", async () => {
     await start();
@@ -194,14 +195,86 @@ describe("synthetic judgment pipeline", () => {
     expect(judging()).toHaveLength(1);
     expect(requests.some(request => request.path === "/plan/wasted")).toBe(false);
   });
-  it.each(["503", "malformed"])("fails closed for %s AI responses without automatic retries", async failure => {
+  it.each([404, 409, "missing-key", "malformed"] as const)("fails closed for %s AI responses without automatic retries", async failure => {
     const base = respond;
-    respond = path => path === "/judge" ? Promise.resolve(failure === "503" ? Response.json({}, { status: 503 }) : Response.json({ action: "unexpected" })) : base(path);
+    respond = async path => {
+      if (path !== "/judge") return base(path);
+      if (failure === "missing-key") return Response.json({ detail: "ANTHROPIC_API_KEY" }, { status: 503 });
+      if (failure === "malformed") return Response.json({ action: "unexpected" });
+      return Response.json({}, { status: failure });
+    };
     await start();
     await screen.findByRole("alert");
-    await sample(); await sample();
+    await advance(60_000);
     expect(screen.queryByLabelText("YouTube 활동 확인")).toBeNull();
     expect(judging()).toHaveLength(1);
+  });
+  it.each([502, 503, 504, "network"] as const)("recovers from %s at five seconds and opens the widget question", async failure => {
+    const base = respond;
+    let first = true;
+    respond = async path => {
+      if (path !== "/judge" || !first) return base(path);
+      first = false;
+      if (failure === "network") throw new TypeError("offline");
+      return Response.json({}, { status: failure });
+    };
+    await start(true);
+    const initial = judging()[0].at;
+    await advance(initial + 4999 - Date.now());
+    expect(judging()).toHaveLength(1);
+    await advance(1);
+    expect(judging()).toHaveLength(2);
+    expect(judging()[1].at - initial).toBe(5000);
+    expect(within(screen.getByRole("dialog", { name: "안뇽이 말풍선" }))
+      .getByLabelText("YouTube 활동 확인")).toBeTruthy();
+    await advance(45_000);
+    expect(judging()).toHaveLength(2);
+  });
+  it("stops after exactly three retries with 5, 15 and 30 second backoff", async () => {
+    const base = respond;
+    respond = path => path === "/judge" ? Promise.resolve(Response.json({}, { status: 502 })) : base(path);
+    await start();
+    await advance(110_000);
+    const initial = judging()[0].at;
+    expect(judging().map(entry => entry.at - initial)).toEqual([0, 5000, 20000, 50000]);
+    expect(screen.getByRole("alert").textContent).toContain("자동 재시도 중지");
+  });
+  it.each(["video", "end", "pause", "consent"])("cancels polling retries after %s changes", async stop => {
+    const base = respond;
+    respond = path => path === "/judge" ? Promise.resolve(Response.json({}, { status: 504 })) : base(path);
+    const view = await start();
+    if (stop === "video") mocks.invoke.mockResolvedValue([]);
+    if (stop === "consent") fireEvent.click(screen.getByRole("checkbox"));
+    if (stop === "end") fireEvent.click(screen.getByRole("button", { name: "세션 종료" }));
+    if (stop === "pause") {
+      mocks.session.paused = true;
+      view.rerender(<CloudSession />);
+    }
+    await advance(60_000);
+    expect(judging()).toHaveLength(1);
+  });
+  it("keeps one in-flight request per video and aborts it when the video disappears", async () => {
+    const base = respond;
+    let complete!: (response: Response) => void;
+    respond = path => path === "/judge" ? new Promise(resolve => { complete = resolve; }) : base(path);
+    await start();
+    await advance(8000);
+    expect(judging()).toHaveLength(1);
+    expect(judging()[0].signal?.aborted).toBe(false);
+    mocks.invoke.mockResolvedValue([]);
+    await sample();
+    expect(judging()[0].signal?.aborted).toBe(true);
+    await act(async () => complete(Response.json({ action: "ask", category: "other", reason: "늦은 결과" })));
+    expect(screen.queryByLabelText("YouTube 활동 확인")).toBeNull();
+  });
+  it("honors the session-wide 429 even when the video changes", async () => {
+    const base = respond;
+    respond = path => path === "/judge" ? Promise.resolve(Response.json({}, { status: 429 })) : base(path);
+    await start();
+    mocks.invoke.mockResolvedValue([{ title: "다른 영상", videoId: "zyxwvutsrqp" }]);
+    await advance(60_000);
+    expect(judging()).toHaveLength(1);
+    expect(screen.getByRole("alert").textContent).toContain("이 세션의 AI 판단 횟수");
   });
   it("removes a question on AI consent revocation and sends no new video", async () => {
     await start();

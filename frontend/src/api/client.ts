@@ -29,7 +29,14 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    public readonly retryable = true,
   ) {
+    super(message);
+  }
+}
+
+export class ApiTransportError extends Error {
+  constructor(public readonly kind: "network" | "timeout", message: string) {
     super(message);
   }
 }
@@ -45,6 +52,7 @@ async function request<T>(
   const abort = () => controller.abort();
   init.signal?.addEventListener("abort", abort, { once: true });
   if (init.signal?.aborted) controller.abort();
+  let receivedResponse = false;
   try {
     const response = await fetch(`${baseUrl}${path}`, {
       ...init,
@@ -55,12 +63,16 @@ async function request<T>(
       },
       signal: controller.signal,
     });
+    receivedResponse = true;
     if (!response.ok) {
       if (response.status === 503 && (path === "/tasks/parse" || path === "/judge")) {
         const body: unknown = await response.json().catch(() => null);
         const missingKey = typeof body === "object" && body !== null &&
           "detail" in body && typeof body.detail === "string" &&
           body.detail.includes("ANTHROPIC_API_KEY");
+        const invalidProvider = typeof body === "object" && body !== null &&
+          "detail" in body && typeof body.detail === "string" &&
+          /LLM_PROVIDER|AI 제공자 설정을 확인/.test(body.detail);
         // Recognize the backend's configuration error without displaying raw
         // provider responses, which can contain internal or sensitive details.
         throw new ApiError(503,
@@ -69,7 +81,7 @@ async function request<T>(
             : "AI 기능을 사용할 수 없어요. 서버의 AI 제공자 설정과 실행 상태를 확인해 주세요.") +
           (path === "/tasks/parse"
             ? " 직접 입력으로 계속할 수 있어요."
-            : " 영상 판단에 따른 개입은 보류합니다."));
+            : " 영상 판단에 따른 개입은 보류합니다."), !missingKey && !invalidProvider);
       }
       const message =
         path === "/tasks/parse"
@@ -83,12 +95,14 @@ async function request<T>(
     }
     return (await response.json()) as T;
   } catch (error) {
+    if (init.signal?.aborted) throw new DOMException("요청이 취소됐어요.", "AbortError");
     if (error instanceof ApiError) throw error;
     if (controller.signal.aborted)
-      throw new Error(
+      throw new ApiTransportError("timeout",
         "응답을 기다리는 시간이 길어졌어요. 다시 시도하거나 직접 입력해 주세요.",
       );
-    throw new Error(
+    if (receivedResponse && !(error instanceof TypeError)) throw new Error("서버 응답 형식이 올바르지 않아요.");
+    throw new ApiTransportError("network",
       "서버에 연결할 수 없어요. 백엔드 실행 상태와 연결 주소를 확인해 주세요.",
     );
   } finally {
@@ -100,7 +114,7 @@ async function request<T>(
 export const api = {
   startSession: (task: string) => request<{ id: number; task: string }>("/sessions", { method: "POST", body: JSON.stringify({ task }) }),
   endSession: (id: number) => request<unknown>(`/sessions/${id}/end`, { method: "POST", body: JSON.stringify({ reason: "stopped" }) }),
-  judge: (session_id: number, video: { title: string; video_id: string }) => request<{ action: "ask" | "ignore"; reason: string; category?: string }>("/judge", { method: "POST", body: JSON.stringify({ session_id, ...video }) }, 45000),
+  judge: (session_id: number, video: { title: string; video_id: string }, signal?: AbortSignal) => request<{ action: "ask" | "ignore"; reason: string; category?: string }>("/judge", { method: "POST", body: JSON.stringify({ session_id, ...video }), signal }, 45000),
   feedback: (session_id: number, video: { title: string; video_id: string }) => request<unknown>("/judge/feedback", { method: "POST", body: JSON.stringify({ session_id, ...video }) }),
   parse: (text: string, signal?: AbortSignal) =>
     request<ParsedTasks>(
