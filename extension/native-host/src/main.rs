@@ -1,7 +1,43 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 // stdout is exclusively Chrome's length-prefixed protocol. Never log activity.
 use annyong_native_protocol::{read_frame, write_frame, origin_valid, Message, Status, HOST};
-fn main() { if run().is_err() { std::process::exit(1); } }
+fn main() {
+    #[cfg(windows)]
+    if std::env::args().nth(1).as_deref() == Some("--write-beta-manifest") {
+        if write_beta_manifest().is_err() { std::process::exit(1); }
+        return;
+    }
+    if run().is_err() { std::process::exit(1); }
+}
+
+#[cfg(windows)]
+fn beta_manifest(exe: &std::path::Path) -> Result<Vec<u8>, serde_json::Error> {
+    serde_json::to_vec_pretty(&serde_json::json!({
+        "name": HOST,
+        "description": "Mobonyong Windows Beta",
+        "path": exe,
+        "type": "stdio",
+        "allowed_origins": ["chrome-extension://ohajfkkemocajnjlbnogdmoominkejci/"]
+    }))
+}
+
+#[cfg(windows)]
+fn write_beta_manifest() -> Result<(), Box<dyn std::error::Error>> {
+    let exe = std::env::current_exe()?;
+    let dir = exe.parent().ok_or("missing host directory")?;
+    std::fs::write(dir.join(format!("{HOST}.json")), beta_manifest(&exe)?)?;
+    Ok(())
+}
+
+#[cfg(all(test, windows))]
+#[test]
+fn installer_manifest_is_utf8_and_escapes_windows_paths() {
+    let exe = std::path::Path::new(r"C:\Users\테스터\뭐보뇽 Beta\in-vibe-native-host.exe");
+    let json: serde_json::Value = serde_json::from_slice(&beta_manifest(exe).unwrap()).unwrap();
+    assert_eq!(json["path"], exe.to_str().unwrap());
+    assert_eq!(json["name"], HOST);
+    assert_eq!(json["allowed_origins"], serde_json::json!(["chrome-extension://ohajfkkemocajnjlbnogdmoominkejci/"]));
+}
 #[cfg(windows)]
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     use annyong_native_protocol::pipe::Pipe;

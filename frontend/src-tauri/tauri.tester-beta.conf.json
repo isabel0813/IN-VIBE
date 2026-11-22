@@ -1,0 +1,26 @@
+{
+  "bundle": {
+    "resources": {
+      "target/release/in-vibe-native-host.exe": "beta-host/in-vibe-native-host.exe"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerHooks": "installer/tester-beta.nsh"
+      },
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      }
+    }
+  },
+  "app": {
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; connect-src ipc: http://ipc.localhost https://api.mobonyong.com; object-src 'none'; frame-src 'none'",
+      "devCsp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; connect-src ipc: http://ipc.localhost https://api.mobonyong.com; object-src 'none'; frame-src 'none'"
+    }
+  },
+  "version": "0.3.4",
+  "identifier": "io.invibe.annyong.beta",
+  "productName": "Mobonyong Tester Beta"
+}
