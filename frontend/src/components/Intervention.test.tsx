@@ -40,9 +40,9 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 async function advance(ms: number) { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); }
-async function start(consent = true) {
+async function start(consent = true, task = "물리학2 패러데이 법칙 공부하기") {
   const view = render(<><CloudSession /><UltimateOverlay /></>);
-  fireEvent.change(screen.getByLabelText("지금 공부할 일"), { target: { value: "물리학2 패러데이 법칙 공부하기" } });
+  fireEvent.change(screen.getByLabelText("지금 공부할 일"), { target: { value: task } });
   if (consent) fireEvent.click(screen.getByRole("checkbox"));
   fireEvent.click(screen.getByRole("button", { name: "집중 시작" }));
   await waitFor(() => expect(mocks.show).toHaveBeenCalled());
@@ -80,6 +80,41 @@ it("does not advance time while the video is hidden or paused", async () => {
   mocks.videos = [{ title: "Minecraft gameplay", videoId: "abcdefghijk" }];
   await advance(30_000); expect(cloudMemory.read()?.ask).toBeNull();
   await advance(1000); expect(cloudMemory.read()?.stage).toBe(1);
+});
+it("keeps a study-music playlist local and displays no video question", async () => {
+  mocks.videos = [{ title: "공부용 음악 플레이리스트", videoId: "abcdefghijk" }];
+  await start();
+  await advance(60_000);
+  expect(api.judge).not.toHaveBeenCalled();
+  expect(cloudMemory.read()?.ask).toBeNull();
+});
+
+it.each([
+  "아티스트 신곡 Official MV | 플레이리스트",
+  "아티스트 Lo-fi 신곡 Official MV",
+  "롤 하이라이트 플레이리스트",
+])("sends %s for judgment and asks only after a minute of valid playback", async title => {
+  const task = "물리학 실험 보고서 작성";
+  vi.mocked(api.startSession).mockResolvedValue({ id: 91, task });
+  mocks.videos = [{ title, videoId: "abcdefghijk" }];
+  await start(true, task);
+  expect(api.startSession).toHaveBeenCalledExactlyOnceWith(task);
+  expect(cloudMemory.read()?.task).toBe(task);
+  expect(api.judge).toHaveBeenCalledExactlyOnceWith(91, { title, video_id: "abcdefghijk" }, expect.any(AbortSignal));
+  await advance(59_000);
+  expect(cloudMemory.read()?.ask).toBeNull();
+  await advance(1000);
+  expect(cloudMemory.read()).toMatchObject({ ask: { title }, stage: 1 });
+});
+
+it("sends a playlist with no listening cues to AI and honors a background result", async () => {
+  const title = "오늘의 플레이리스트";
+  mocks.videos = [{ title, videoId: "abcdefghijk" }];
+  vi.mocked(api.judge).mockResolvedValue({ action: "ignore", category: "background", reason: "합성 판단" });
+  await start();
+  await advance(60_000);
+  expect(api.judge).toHaveBeenCalledExactlyOnceWith(91, { title, video_id: "abcdefghijk" }, expect.any(AbortSignal));
+  expect(cloudMemory.read()?.ask).toBeNull();
 });
 it("keeps one fullscreen open when it covers Chrome and closes once on feedback", async () => {
   await start();
@@ -220,6 +255,45 @@ function InactivityUltimate({ stage = 3, consent = true }: { stage?: number | nu
   });
   return <UltimateOverlay inactivity={focus.inactivityUltimate} />;
 }
+
+it.each([1, 2])("continues judging and counting gameplay after inactivity stage %s", async stage => {
+  const task = "물리학 실험 보고서 작성";
+  localStorage.setItem("mobonyong.ai-consent", "1");
+  mocks.session = { running: true, paused: false, task: { id: 1_000_000_000_091, name: task } };
+  mocks.videos = [];
+  const view = render(<InactivityUltimate stage={null} />);
+  await act(async () => cloudMemory.set({ id: 91, task, ask: null, reason: "" }));
+  await advance(60_000);
+  await act(async () => view.rerender(<InactivityUltimate stage={stage} />));
+  mocks.videos = [{ title: "게임 플레이", videoId: "abcdefghijk" }];
+  await advance(1000);
+  expect(api.judge).toHaveBeenCalledTimes(1);
+  await advance(59_000);
+  expect(cloudMemory.read()?.ask).toBeNull();
+  await advance(1000);
+  expect(cloudMemory.read()).toMatchObject({ ask: { title: "게임 플레이" }, stage: 1 });
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+});
+
+it("checks collection during the inactivity fullscreen without judging or counting covered video time", async () => {
+  const task = "물리학 실험 보고서 작성";
+  localStorage.setItem("mobonyong.ai-consent", "1");
+  mocks.session = { running: true, paused: false, task: { id: 1_000_000_000_091, name: task } };
+  const view = render(<InactivityUltimate />);
+  await act(async () => cloudMemory.set({ id: 91, task, ask: null, reason: "" }));
+  await advance(61_000);
+  expect(screen.getByRole("alertdialog")).toBeTruthy();
+  expect(mocks.commands).toHaveBeenCalledWith("browser_read", undefined);
+  expect(mocks.commands).not.toHaveBeenCalledWith("browser_videos", undefined);
+  expect(api.judge).not.toHaveBeenCalled();
+  expect(cloudMemory.read()?.ask).toBeNull();
+  await act(async () => view.rerender(<InactivityUltimate stage={null} />));
+  await advance(60_000);
+  expect(api.judge).toHaveBeenCalledTimes(1);
+  expect(cloudMemory.read()?.ask).toBeNull();
+  await advance(1000);
+  expect(cloudMemory.read()).toMatchObject({ ask: { title: "Minecraft gameplay" }, stage: 1 });
+});
 
 it.each(["answer", "pause", "end", "consent"])("uses the ultimate image and closes the no-input fullscreen on %s", async stop => {
   const respond = vi.spyOn(activityApi, "respond").mockResolvedValue(emptyActivity);
