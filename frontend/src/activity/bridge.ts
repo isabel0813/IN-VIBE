@@ -28,12 +28,17 @@ export const activityApi = {
 };
 export function useActivity() {
   const [value, setValue] = useState(emptyActivity);
+  const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
     if (!isDesktop()) return;
     let alive = true;
     let dispose: (() => void) | undefined;
-    const accept = (next: Activity) => { if (alive) setValue(old => next.revision >= old.revision ? next : old); };
+    const accept = (next: Activity) => {
+      if (!alive) return;
+      setValue(old => next.revision >= old.revision ? next : old);
+      setReady(true);
+    };
     void (async () => {
       try {
         const stop = await listen<Activity>("activity-state", event => accept(event.payload));
@@ -43,6 +48,6 @@ export function useActivity() {
     })();
     return () => { alive = false; dispose?.(); };
   }, []);
-  return { activity: value, error };
+  return { activity: value, error, ready };
 }
 export const categoryLabels = { related: "관련 활동", suspect: "이탈 의심", unknown: "미분류", idle: "유휴" };

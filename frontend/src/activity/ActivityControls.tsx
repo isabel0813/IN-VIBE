@@ -7,7 +7,7 @@ import { useFocusSession } from "../session/store";
 import { activityStatus } from "./pipelineStatus";
 
 export default function ActivityControls() {
-  const { activity, error: syncError } = useActivity();
+  const { activity, error: syncError, ready: activityReady } = useActivity();
   const { session, ready } = useFocusSession();
   const [consent, setConsent] = useState(false);
   const [related, setRelated] = useState("");
@@ -27,10 +27,11 @@ export default function ActivityControls() {
     finally { setBusy(false); }
   }
   return <details className="activity-controls">
-    <summary>Windows 활동 감지 · {activityStatus(activity.consent, activity.monitoring, categoryLabels[activity.category], session, ready)}</summary>
+    <summary>Windows 활동 감지 · {activityReady ? activityStatus(activity.consent, activity.monitoring, categoryLabels[activity.category], session, ready) : syncError ? "설정 확인 실패" : "설정 불러오는 중"}</summary>
     {session.running && session.task && session.task.id >= 1_000_000_000_000 && <p>한 줄 집중 세션은 로컬 이탈 판단 대신 YouTube 관측과 별도 동의한 AI 판단을 사용해요. 아래 YouTube 연결 상태와 AI 동의를 각각 확인해 주세요.</p>}
     <p>동의한 집중 세션에서만 활성 창의 제목·프로세스와 유지 시간을 이 PC 메모리에서 확인해요. 키 입력과 화면은 수집하지 않고, 창 정보는 서버로 보내지 않아요. 앱을 닫으면 지워져요.</p>
-    <label><input type="checkbox" checked={consent} onChange={e => { setConsent(e.target.checked); if (!e.target.checked && activity.consent) void configure(false); }} /> 위 내용을 이해했으며 로컬 활동 감지에 동의합니다</label>
+    <label><input type="checkbox" checked={consent} disabled={!activityReady || busy} onChange={e => { setConsent(e.target.checked); if (!e.target.checked && activity.consent) void configure(false); }} /> 위 내용을 이해했으며 로컬 활동 감지에 동의합니다</label>
+    <p>이 동의 여부만 이 PC에 저장돼요. 앱을 다시 열어도 동의는 유지되며, 집중 세션을 시작해야 감지해요.</p>
     <div className="activity-fields">
       <label>관련 활동 단어 (쉼표 구분)<input value={related} onChange={e => setRelated(e.target.value)} placeholder="강의, 논문, 프로젝트 이름" /></label>
       <label>이탈 의심 단어 (쉼표 구분)<input value={suspect} onChange={e => setSuspect(e.target.value)} placeholder="직접 지정한 게임·영상 제목" /></label>

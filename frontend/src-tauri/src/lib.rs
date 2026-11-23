@@ -1,4 +1,5 @@
 mod activity;
+mod activity_consent;
 mod browser;
 mod geometry;
 mod session;
@@ -130,6 +131,10 @@ fn activity_read(caller: WebviewWindow, state: State<'_, AppState>) -> Result<ac
         .clone())
 }
 
+fn activity_consent_path(app: &AppHandle) -> Result<std::path::PathBuf> {
+    Ok(native(app.path().app_local_data_dir())?.join("activity-consent"))
+}
+
 #[tauri::command]
 fn activity_configure(
     caller: WebviewWindow,
@@ -140,7 +145,22 @@ fn activity_configure(
     allowed(&caller)?;
     let mut session = state.session.lock().map_err(|e| e.to_string())?;
     let mut detector = state.activity.lock().map_err(|e| e.to_string())?;
-    detector.configure(config, cfg!(debug_assertions))?;
+    let revoke = !config.consent;
+    let saved = detector.configure_with(config, cfg!(debug_assertions), |consent| {
+        activity_consent::save(&activity_consent_path(&app)?, consent).map_err(|_| {
+            if consent {
+                "Windows 활동 감지 동의를 저장하지 못했어요.".to_string()
+            } else {
+                "감지를 중지했지만 저장된 동의를 지우지 못했어요.".to_string()
+            }
+        })
+    });
+    let revoke_error = if revoke {
+        saved.err()
+    } else {
+        saved?;
+        None
+    };
     let mut browser = state.browser.lock().map_err(|e| e.to_string())?;
     browser.invalidate();
     if !detector.view.consent {
@@ -164,8 +184,13 @@ fn activity_configure(
     drop(detector);
     drop(session);
     if !view.consent {
-        hide_ultimate(&app, &state)?;
-        close_automatic_widget(&app, &state)?;
+        let hidden = hide_ultimate(&app, &state);
+        let closed = close_automatic_widget(&app, &state);
+        if let Some(error) = revoke_error {
+            return Err(error);
+        }
+        hidden?;
+        closed?;
     }
     Ok(view)
 }
@@ -643,6 +668,18 @@ pub fn run() {
         .manage(AppState::default())
         .setup(|app| {
             let app = app.handle().clone();
+            {
+                let state = app.state::<AppState>();
+                let mut detector = state.activity.lock().unwrap();
+                match activity_consent_path(&app).and_then(|path| {
+                    activity_consent::load(&path)
+                        .map_err(|_| "저장된 Windows 활동 감지 동의를 읽지 못했어요.".to_string())
+                }) {
+                    Ok(consent) => detector.view.consent = consent,
+                    Err(error) => detector.view.error = Some(error),
+                }
+                detector.view.revision += 1;
+            }
             #[cfg(windows)]
             start_browser_bridge(app.clone());
             std::thread::spawn(move || loop {

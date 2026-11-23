@@ -139,11 +139,21 @@ impl Detector {
         }
         self.observe(read(), now)
     }
+    #[cfg(test)]
     pub fn configure(&mut self, config: Config, development: bool) -> Result<(), String> {
+        self.configure_with(config, development, |_| Ok(()))
+    }
+    pub fn configure_with(
+        &mut self,
+        config: Config,
+        development: bool,
+        save_consent: impl FnOnce(bool) -> Result<(), String>,
+    ) -> Result<(), String> {
         if !config.consent {
             self.reset_session();
             self.view.consent = false;
-            return Ok(());
+            self.view.revision += 1;
+            return save_consent(false);
         }
         if !(if development { 10 } else { 300 }..=3600).contains(&config.threshold_seconds) {
             return Err("감지 기준은 기본 300초 이상, 개발 빌드에서만 10초 이상이에요.".into());
@@ -160,6 +170,7 @@ impl Detector {
         };
         let related = clean(config.related_terms)?;
         let suspect = clean(config.suspect_terms)?;
+        save_consent(true)?;
         self.reset_session();
         self.view.consent = config.consent;
         self.view.threshold_seconds = config.threshold_seconds;

@@ -24,7 +24,7 @@ vi.mock("../activity/bridge", async original => ({
 
 beforeEach(async () => {
   cloudMemory.reset();
-  vi.mocked(useActivity).mockReturnValue({ activity: emptyActivity, error: "" });
+  vi.mocked(useActivity).mockReturnValue({ activity: emptyActivity, error: "", ready: true });
   await sessionStore.send({ type: "end" });
 });
 afterEach(() => { cloudMemory.reset(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
@@ -56,7 +56,7 @@ describe("Annyong widget preview behavior", () => {
     await sessionStore.send({ type: "start", task: { id: 1, name: "공부" } });
     const incident = { id: 7, kind: "inactivity" as const, stage: 1, startedAt: 0, seconds: 60, process: "", title: "", claimed: false };
     const setActivity = (pending: typeof incident | null, consent = true) => vi.mocked(useActivity).mockReturnValue({
-      activity: { ...emptyActivity, consent, incident: pending }, error: "",
+      activity: { ...emptyActivity, consent, incident: pending }, error: "", ready: true,
     });
     setActivity(incident);
     let emitLayout = (_layout: WidgetLayout) => {};
