@@ -13,23 +13,35 @@ describe("dialogue library", () => {
   const all: string[] = [];
   for (const tone of ["default", "hardcore"] as Tone[]) {
     for (const [group, stage] of situations) {
-      it(`${tone} ${group} ${stage} has fifteen distinct, usable lines`, () => {
+      it(`${tone} ${group} ${stage} has enough distinct lines even without context`, () => {
         const pool = poolFor({ tone, group, stage });
-        expect(pool).toHaveLength(15);
-        expect(new Set(pool).size).toBe(15);
-        expect(pool.some(line => !line.includes("{"))).toBe(true);
+        expect(pool.length).toBeGreaterThanOrEqual(8);
+        expect(pool.length).toBeLessThanOrEqual(12);
+        expect(new Set(pool).size).toBe(pool.length);
+        expect(pool.filter(line => !line.includes("{")).length).toBeGreaterThanOrEqual(8);
         expect(pool.every(line => !/\d+\s*(분|초)/.test(line))).toBe(true);
         const explicit = pool.filter(line => profanity.test(line)).length;
         if (tone === "default") expect(explicit).toBe(0);
         else {
-          expect(explicit).toBeGreaterThanOrEqual(5);
-          expect(explicit).toBeLessThan(15);
+          expect(explicit).toBeGreaterThanOrEqual(Math.ceil(pool.length / 3));
+          expect(explicit).toBeLessThan(pool.length);
+        }
+        const choose = createDialogueSelector(() => 0);
+        const seen: string[] = [];
+        for (let i = 0; i < pool.length * 2; i++) {
+          const { template } = choose({ id: String(i), tone, group, stage, hasTask: false, hasVideo: false });
+          expect(seen.slice(-5)).not.toContain(template);
+          seen.push(template);
         }
       });
       all.push(...poolFor({ tone, group, stage }));
     }
   }
-  it("does not use the same line in multiple pools", () => expect(new Set(all).size).toBe(240));
+  it("keeps the edited corpus in range with no duplicate lines", () => {
+    expect(all.length).toBeGreaterThanOrEqual(150);
+    expect(all.length).toBeLessThanOrEqual(170);
+    expect(new Set(all).size).toBe(all.length);
+  });
 });
 
 it("selects with injected randomness, stabilizes an event and honors a new stage or tone", () => {
@@ -71,4 +83,29 @@ it("formats once, truncates titles, and drops unsafe or missing variables only f
   expect(dialogueContext("hardcore", { video: "씨발ㅋㅋ 하이라이트" }).video).toContain("씨발");
   const otherMode = { ...line, template: poolFor({ ...request, tone: "hardcore" })[1] };
   expect(profanity.test(renderDialogue(otherMode, request, {}))).toBe(false);
+});
+
+it.each([
+  { task: "물리학 실험 보고서 작성", video: "롤 하이라이트 모음" },
+  { task: "일반수학2 기말고사 공부", video: "공식 뮤직비디오 플레이리스트" },
+  { task: "물리학 실험 보고서 작성과 제출 전 최종 검토 ".repeat(3), video: "공식 뮤직비디오 플레이리스트 ".repeat(5) },
+])("renders quoted variables with stable suffixes and brief dialogue for $task", (values) => {
+  for (const tone of ["default", "hardcore"] as const) {
+    const context = dialogueContext(tone, values);
+    for (const [group, stage] of situations) {
+      for (const template of poolFor({ tone, group, stage })) {
+        const variables = Array.from(template.matchAll(/\{(task|video)\}/g));
+        expect(variables.length, template).toBeLessThanOrEqual(1);
+        const [variable] = variables;
+        if (variable) {
+          // After the closing quote, only invariant suffixes or punctuation are allowed.
+          expect(template, template).toMatch(/\{(?:task|video)\}」(?:도|에|부터|[\s,.?!]|$)/u);
+        }
+        const rendered = renderDialogue({ template, stage }, { ...request, tone, group, stage }, context);
+        if (variable) expect(rendered).toContain(context[variable[1] as "task" | "video"]);
+        expect(rendered).not.toMatch(/\{(?:task|video)\}/);
+        expect(Array.from(rendered).length, rendered).toBeLessThanOrEqual(70);
+      }
+    }
+  }
 });
