@@ -116,6 +116,34 @@ describe("Annyong widget preview behavior", () => {
     fireEvent.pointerDown(document.body);
     expect(screen.queryByRole("dialog")).toBeNull();
   });
+  it("keeps a manual native bubble on webview blur and reopens after native dismissal", async () => {
+    let emitLayout = (_layout: WidgetLayout) => {};
+    vi.spyOn(nativeWidget, "listenLayout").mockImplementation(async listener => {
+      emitLayout = listener;
+      return () => {};
+    });
+    vi.spyOn(nativeWidget, "readLayout").mockResolvedValue(closedLayout);
+    const opened = { ...closedLayout, open: true, automatic: false, width: 340, height: 440 };
+    const resize = vi.spyOn(nativeWidget, "bubble").mockImplementation(async open => {
+      const next = open ? opened : closedLayout;
+      emitLayout(next);
+      return next;
+    });
+
+    render(<Widget native />);
+    await waitFor(() => expect(screen.getByRole<HTMLButtonElement>("button", { name: /^안뇽이:/ }).disabled).toBe(false));
+    clickPet();
+    await screen.findByRole("dialog");
+    fireEvent(window, new Event("blur"));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(resize).toHaveBeenCalledExactlyOnceWith(true, false);
+
+    await act(() => emitLayout(closedLayout));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    clickPet();
+    await screen.findByRole("dialog");
+    expect(resize.mock.calls).toEqual([[true, false], [true, false]]);
+  });
   it("moves a web preview without opening a bubble on a drag", () => {
     vi.stubGlobal("PointerEvent", MouseEvent);
     render(<Widget native={false} />);

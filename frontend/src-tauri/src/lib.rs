@@ -4,6 +4,7 @@ mod browser;
 mod geometry;
 mod session;
 mod visibility;
+mod widget_focus;
 
 use geometry::{Layout, PET};
 use session::{Action, Session};
@@ -23,6 +24,7 @@ struct AppState {
     browser: Mutex<browser::Browser>,
     layout: Mutex<Layout>,
     positioned: AtomicBool,
+    manual_bubble_focus: widget_focus::ManualBubbleFocus,
     ultimate: Mutex<Option<UltimateWindow>>,
 }
 #[derive(Clone, Copy)]
@@ -524,7 +526,8 @@ fn resize_widget_with_mode(app: &AppHandle, open: bool, automatic: bool) -> Resu
         open,
     );
     layout.automatic = open && automatic;
-    // Update before focus operations: a blur may be delivered synchronously.
+    // Resizing can emit focus events before the newly opened bubble gains focus.
+    state.manual_bubble_focus.reset();
     *state.layout.lock().map_err(|e| e.to_string())? = layout;
     native(widget.set_size(LogicalSize::new(layout.width, layout.height)))?;
     native(widget.set_position(PhysicalPosition::new(
@@ -550,8 +553,25 @@ fn resize_widget_with_mode(app: &AppHandle, open: bool, automatic: bool) -> Resu
     let _ = app.emit_to("widget", "widget-layout", layout);
     if open && !automatic {
         native(widget.set_focus())?;
+        if widget.is_focused().unwrap_or(false) {
+            state.manual_bubble_focus.changed(true, true, true);
+        }
     }
     Ok(layout)
+}
+
+fn widget_is_foreground(window: &tauri::Window) -> bool {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+        // WebView focus can move inside the widget without changing the foreground HWND.
+        let foreground = unsafe { GetForegroundWindow() };
+        window.hwnd().is_ok_and(|hwnd| hwnd.0 as windows_sys::Win32::Foundation::HWND == foreground)
+    }
+    #[cfg(not(windows))]
+    {
+        window.is_focused().unwrap_or(false)
+    }
 }
 
 #[tauri::command]
@@ -781,14 +801,16 @@ pub fn run() {
                 let _ = restore_main(window.app_handle(), "plan");
                 let _ = window.hide();
             }
-            ("widget", WindowEvent::Focused(false)) => {
-                let open = window
-                    .state::<AppState>()
+            ("widget", WindowEvent::Focused(focused)) => {
+                let state = window.state::<AppState>();
+                let manual_open = state
                     .layout
                     .lock()
                     .map(|layout| layout.open && !layout.automatic)
                     .unwrap_or(false);
-                if open {
+                if manual_open && state.manual_bubble_focus.changed(
+                    manual_open, *focused, !*focused && widget_is_foreground(window),
+                ) {
                     let _ = resize_widget(window.app_handle(), false);
                 }
             }
