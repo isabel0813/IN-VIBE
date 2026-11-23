@@ -125,7 +125,7 @@ export default function App() {
           </div>}
           {!isDesktop() && <p className="hero-note">웹 미리보기 · 독립 위젯과 YouTube 관측은 Windows 앱에서 사용할 수 있어요.</p>}
           <CloudQuestion />
-          {!value?.ask && !activity.incident && reply && session.task && <ReplyNotice mode={reply.mode} task={session.task.name} />}
+          {!value?.ask && !activity.incident && reply && session.task && <ReplyNotice reply={reply} task={session.task.name} />}
         </section>
         <section className="focus-settings-content" aria-label="집중 설정" hidden={view !== "settings"}>
           <div className="page-head">

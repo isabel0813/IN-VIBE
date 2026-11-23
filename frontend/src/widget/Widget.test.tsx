@@ -40,12 +40,16 @@ describe("Annyong widget preview behavior", () => {
     foreground.focus();
     await act(() => cloudMemory.set(value));
     const dialog = screen.getByRole("dialog", { name: "안뇽이 말풍선" });
+    const firstLine = dialog.querySelector('[data-dialogue-stage="1"]')?.textContent;
+    expect(firstLine).toBeTruthy();
     expect(within(dialog).getByRole("button", { name: "공부 중인데?" })).toBeTruthy();
     expect(document.activeElement).toBe(foreground);
     fireEvent.pointerDown(foreground);
     expect(screen.getByRole("dialog")).toBe(dialog);
     await act(() => cloudMemory.set({ ...value, stage: 2 }));
-    expect(within(dialog).getByText(/5분|연관 영상/)).toBeTruthy();
+    const stronger = dialog.querySelector('[data-dialogue-stage="2"]')?.textContent;
+    expect(stronger).toBeTruthy();
+    expect(stronger).not.toBe(firstLine);
     expect(within(dialog).getByRole("button", { name: "돌아갈게..." })).toBeTruthy();
     expect(document.activeElement).toBe(foreground);
     await act(() => cloudMemory.set({ ...value, stage: 3 }));
@@ -92,7 +96,8 @@ describe("Annyong widget preview behavior", () => {
       setActivity(null);
       view.rerender(<Widget native />);
     });
-    expect(within(screen.getByRole("dialog")).getByText(/헛짚었군|공부 중이었어/)).toBeTruthy();
+    const reply = within(screen.getByRole("dialog")).getByRole("status", { name: "오탐 정정 안내" });
+    expect(reply.querySelector(".persona-line")?.textContent).toBeTruthy();
 
     await act(async () => {
       setActivity({ ...incident, id: 8 });

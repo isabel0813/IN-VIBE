@@ -9,7 +9,7 @@ import { escalation, InterventionClock } from "./intervention";
 import { ultimateArt } from "../widget/character";
 import type { Activity, Incident } from "../activity/bridge";
 import InactivityQuestion from "../activity/InactivityQuestion";
-import { announceReply, interventionLine, ResponseButtons, useTone } from "./persona";
+import { announceReply, DialogueLine, InactivityDialogue, ResponseButtons } from "./persona";
 
 import { cloudMemory, removeLegacyCloudData } from "./cloudMemory";
 import type { CloudState, ResponseMode, VideoResponse } from "./cloudMemory";
@@ -79,16 +79,16 @@ function QuestionActions({ value }: { value: CloudState }) {
 }
 export function CloudQuestion() {
   const value = useCloudSession();
-  const [tone] = useTone();
   if (!value?.ask) return null;
-  return <section role="status" aria-label="YouTube 활동 확인" className="cloud-question"><strong>{interventionLine(tone, "youtube", value.stage ?? 1, value.id)}</strong>
+  return <section role="status" aria-label="YouTube 활동 확인" className="cloud-question">
+    <DialogueLine eventId={value.dialogueId ?? `youtube:${value.id}`} group="youtube" stage={value.stage} task={value.task} video={value.ask.title} />
     <p className="cloud-question-title">{value.ask.title}</p><p className="cloud-question-reason">{value.reason} · AI의 추정이에요.</p>
     <QuestionActions value={value} />
   </section>;
 }
 export function UltimateOverlay({ onEnd, inactivity }: { onEnd?: () => void; inactivity?: Incident | null } = {}) {
   const value = useCloudSession();
-  const [tone] = useTone();
+  const { session } = useFocusSession();
   const dialog = useRef<HTMLDivElement>(null);
   const open = !!inactivity || (!!value?.ask && value.stage === 3);
   useEffect(() => { if (open) dialog.current?.focus(); }, [open]);
@@ -104,7 +104,8 @@ export function UltimateOverlay({ onEnd, inactivity }: { onEnd?: () => void; ina
     }}>
     <div className="ultimate-visual"><img className="ultimate-art" src={ultimateArt} alt="안뇽이 궁극기" /></div>
     <div className="ultimate-card">
-      <h1>{interventionLine(tone, inactivity ? "inactivity" : "youtube", 3, inactivity?.id ?? value?.id ?? 0)}</h1>
+      {inactivity ? <InactivityDialogue incident={inactivity} task={session.task?.name} as="h1" /> : value?.ask &&
+        <DialogueLine eventId={value.dialogueId ?? `youtube:${value.id}`} group="youtube" stage={3} task={value.task} video={value.ask.title} as="h1" />}
       {inactivity ? <InactivityQuestion incident={inactivity} fullscreen /> : value?.ask && <>
         <p className="ultimate-video">{value.ask.title} · {value.reason} · AI의 추정</p>
         <QuestionActions value={value} />
@@ -162,7 +163,7 @@ export function useCloudController(activity?: Activity) {
     if (!value || !consent || activity?.consent === false) { judgments.current.clear(); judgmentFailures.current.clear(); appliedResponses.current.clear(); clock.current.clear(); }
     if (!value || !consent || activity?.consent === false || !isDesktop() || !session.running || session.paused) {
       clock.current.pause();
-      if (value?.ask || value?.reason || value?.stage) write({ ...value, ask: null, reason: "", stage: undefined });
+      if (value?.ask || value?.reason || value?.stage) write({ ...value, ask: null, reason: "", stage: undefined, dialogueId: undefined });
       return;
     }
     let cancelled = false;
@@ -191,7 +192,7 @@ export function useCloudController(activity?: Activity) {
             clock.current.clear();
           } else clock.current.pause();
           const current = read();
-          if (current?.ask || current?.reason || current?.stage) write({ ...current, ask: null, reason: "", stage: undefined });
+          if (current?.ask || current?.reason || current?.stage) write({ ...current, ask: null, reason: "", stage: undefined, dialogueId: undefined });
           return;
         }
         // At stage 3 the app itself can cover Chrome. Keep the selected question
@@ -266,13 +267,16 @@ export function useCloudController(activity?: Activity) {
         const next = asking.find(video => video.videoId === current.ask?.video_id && clock.current.stage(video.videoId) === highest) ?? asking[0];
         const ask = next ? { title: next.title, video_id: next.videoId } : null;
         const stage = next ? clock.current.stage(next.videoId) || undefined : undefined;
-        if (current.ask?.video_id !== ask?.video_id || current.stage !== stage) write({ ...current, ask, stage, reason: next ? judgments.current.get(`${id}:${next.videoId}`)!.reason : "" });
+        if (current.ask?.video_id !== ask?.video_id || current.stage !== stage) {
+          write({ ...current, ask, stage, dialogueId: ask ? crypto.randomUUID() : undefined,
+            reason: next ? judgments.current.get(`${id}:${next.videoId}`)!.reason : "" });
+        }
       } catch (e) {
         cancelUnseen();
         clock.current.pause();
         if (!cancelled) {
           const current = read();
-          if (current?.id === id && current.ask && current.stage !== 3) write({ ...current, ask: null, reason: "", stage: undefined });
+          if (current?.id === id && current.ask && current.stage !== 3) write({ ...current, ask: null, reason: "", stage: undefined, dialogueId: undefined });
           setError(`영상 관측을 확인하지 못했어요. ${String(e)}`);
         }
       }

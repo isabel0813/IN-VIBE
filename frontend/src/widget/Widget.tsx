@@ -68,9 +68,9 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
   const promptStage = question ? cloud?.stage ?? 1 : inactivityStage ?? 0;
   const character = question || inactivityStage === 1 || inactivityStage === 2 ? "suspect" : session.character;
   const copy = characterCopy[character];
-  const nudge = question ? (cloud?.stage === 2 ? "5분째다." : "목표 확인")
-    : inactivityStage === 2 ? "5분째 입력이 없어!"
-      : inactivityStage === 1 ? "혹시 딴짓 중이야?"
+  const nudge = question ? (cloud?.stage === 2 ? "목표 다시 확인" : "목표 확인")
+    : inactivityStage === 2 ? "집중 상태 다시 확인"
+      : inactivityStage === 1 ? "집중 상태 확인"
         : incident?.kind !== "inactivity" && incident && character === "suspect" ? "잠깐, 확인!" : "";
   const preview = previewPlacement(
     position.x,
@@ -280,7 +280,7 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
             incident={incident} paused={session.paused || !session.running || !activity.consent}
             onLocalReturn={layout.automatic ? () => void bubble(false) : undefined} />}
           {question && <CloudQuestion />}
-          {!question && !incident && reply && session.task && <ReplyNotice mode={reply.mode} task={session.task.name} />}
+          {!question && !incident && reply && session.task && <ReplyNotice reply={reply} task={session.task.name} />}
           {session.character === "checkin" && !activity.incident && session.simulated && (
             <div className="checkin-options">
               <button

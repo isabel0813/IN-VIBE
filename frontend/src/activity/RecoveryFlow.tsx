@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import type { RecoveryPlan } from "../api/types";
 import { showMain, showWidget } from "../desktop/bridge";
 import { sessionStore } from "../session/store";
+import { InactivityDialogue } from "../components/persona";
 import { activityApi } from "./bridge";
 import type { Incident } from "./bridge";
 import "./activity.css";
@@ -71,8 +72,7 @@ export default function RecoveryFlow({ incident, paused, onLocalReturn }: {
       }}>{result.plan.now_task ? "다음 할 일에 집중하기" : "계획 확인하기"}</button>
     </> : incident && <>
       {inactivity ? <>
-        <strong>{incident.stage === 2 || (incident.stage === 0 && incident.seconds >= 300)
-          ? "벌써 5분째야. 지금도 공부 중이야?" : "혹시 딴짓 중이야?"}</strong>
+        <InactivityDialogue incident={incident} task={sessionStore.getSnapshot().session.task?.name} />
         <p>{Math.floor(incident.seconds / 60)}분 {incident.seconds % 60}초 동안 입력이 없었어. 실제로 뭘 하고 있었는지 알려 줘.</p>
       </> : <>
         <p>이탈 의심 창을 연속 {Math.floor(incident.seconds / 60)}분 {incident.seconds % 60}초 관측했어. 실제 딴짓인지는 네가 확인해 줘.</p>

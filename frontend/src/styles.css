@@ -1630,10 +1630,15 @@ button.link:hover {
 .cloud-question strong {
   font-size: 16px;
 }
+.persona-line,
+.focus-reply strong {
+  overflow-wrap: anywhere;
+}
 .cloud-question-title {
   margin-top: 8px;
   color: #172b3b;
   font-size: 14px;
+  overflow-wrap: anywhere;
 }
 .cloud-question-reason {
   margin-top: 4px;

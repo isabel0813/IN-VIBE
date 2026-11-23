@@ -28,6 +28,34 @@ it("synchronizes live video data to a late widget without persistent writes", as
   expect(write).not.toHaveBeenCalled();
   write.mockRestore();
 });
+
+it("chooses once for the main view and all widget consumers without saving dialogue history", async () => {
+  const write = vi.spyOn(Storage.prototype, "setItem");
+  const port = network();
+  const main = createCloudMemory(true, port());
+  const widget = createCloudMemory(false, port());
+  const request = { id: "same-episode", tone: "default", group: "youtube", stage: 3, hasTask: true, hasVideo: true } as const;
+  const [first, duplicate] = await Promise.all([widget.dialogue(request), widget.dialogue(request)]);
+  expect(first).toEqual(duplicate);
+  expect(main.dialogue(request)).toEqual(first);
+  const late = createCloudMemory(false, port());
+  expect(await late.dialogue(request)).toEqual(first);
+  expect(await late.dialogue({ ...request, id: "another-episode" })).not.toEqual(first);
+  expect(write).not.toHaveBeenCalled();
+  write.mockRestore();
+});
+it("keeps an unanswered inactivity stage across windows after input resumes", async () => {
+  const port = network();
+  const main = createCloudMemory(true, port());
+  const widget = createCloudMemory(false, port());
+  const request = { id: "suspended", tone: "default", group: "inactivity", stage: 2, hasTask: false, hasVideo: false } as const;
+  const selected = await widget.dialogue(request);
+  expect(selected.stage).toBe(2);
+  expect(main.dialogue({ ...request, stage: 0 })).toEqual(selected);
+  const late = createCloudMemory(false, port());
+  expect(await late.dialogue({ ...request, stage: 0 })).toEqual(selected);
+  expect((await late.dialogue({ ...request, tone: "hardcore", stage: 0 })).stage).toBe(2);
+});
 it("acknowledges correction before another view reads and retains only session IDs", async () => {
   const port = network();
   const main = createCloudMemory(true, port());

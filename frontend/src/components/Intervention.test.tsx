@@ -53,10 +53,14 @@ it("escalates at exactly 1, 5 and 10 observed minutes without treating silence a
   await start();
   await advance(59_000); expect(cloudMemory.read()?.ask).toBeNull();
   await advance(1000); expect(cloudMemory.read()?.stage).toBe(1);
+  const firstLine = screen.getByLabelText("YouTube 활동 확인").querySelector(".persona-line")?.textContent;
+  expect(firstLine).toBeTruthy();
   expect(screen.queryByRole("alertdialog")).toBeNull();
   await advance(239_000); expect(cloudMemory.read()?.stage).toBe(1);
   await advance(1000); expect(cloudMemory.read()?.stage).toBe(2);
-  expect(screen.getByText(/5분|연관 영상/)).toBeTruthy();
+  const stronger = screen.getByLabelText("YouTube 활동 확인").querySelector('[data-dialogue-stage="2"]')?.textContent;
+  expect(stronger).toBeTruthy();
+  expect(stronger).not.toBe(firstLine);
   await advance(299_000); expect(cloudMemory.read()?.stage).toBe(2);
   await advance(1000); expect(cloudMemory.read()?.stage).toBe(3);
   expect(screen.getByRole("alertdialog", { name: "안뇽이 궁극기" })).toBeTruthy();

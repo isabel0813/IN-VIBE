@@ -1,12 +1,11 @@
 import { useRef, useState } from "react";
-import { announceReply, interventionLine, ResponseButtons, useTone } from "../components/persona";
+import { announceReply, InactivityDialogue, ResponseButtons } from "../components/persona";
 import type { ResponseMode } from "../components/cloudMemory";
 import { useFocusSession } from "../session/store";
 import { activityApi } from "./bridge";
 import type { Incident } from "./bridge";
 
 export default function InactivityQuestion({ incident, fullscreen = false }: { incident: Incident; fullscreen?: boolean }) {
-  const [tone] = useTone();
   const { session } = useFocusSession();
   const pending = useRef(false);
   const [busy, setBusy] = useState(false);
@@ -27,7 +26,7 @@ export default function InactivityQuestion({ incident, fullscreen = false }: { i
     }
   }
   return <section className="cloud-question" role="status" aria-label="무입력 확인">
-    {!fullscreen && <strong>{interventionLine(tone, "inactivity", incident.stage || (incident.seconds >= 300 ? 2 : 1), incident.id)}</strong>}
+    {!fullscreen && <InactivityDialogue incident={incident} task={session.task?.name} />}
     <p>키보드와 마우스 입력이 없었어. 지금 상태를 알려 줘.</p>
     <ResponseButtons busy={busy} answer={mode => void answer(mode)} />
     {error && <p role="alert">{error}</p>}

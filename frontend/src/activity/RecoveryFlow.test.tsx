@@ -22,7 +22,7 @@ it("returns from the MVP inactivity prompt without asking for time or calling th
 it("asks for an explicit local duration and never sends a no-input confirmation to the planner", async () => {
   const wasted = vi.spyOn(api, "wasted");
   render(<RecoveryFlow incident={{ ...incident, kind: "inactivity", stage: 2, seconds: 300 }} paused={false} />);
-  expect(screen.getByText(/벌써 5분째야/)).toBeTruthy();
+  expect(document.querySelector('[data-dialogue-stage="2"]')?.textContent).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "맞아, 딴짓했어" }));
   const confirm = screen.getByRole<HTMLButtonElement>("button", { name: "시간 확인하고 공부로 복귀" });
   expect(confirm.disabled).toBe(true);
@@ -37,7 +37,7 @@ it("asks for an explicit local duration and never sends a no-input confirmation 
 
 it.each([["공부 중이야", "studying"], ["잠깐 쉬는 중이야", "break"]])("sends the local %s response", async (label, choice) => {
   render(<RecoveryFlow incident={{ ...incident, kind: "inactivity", stage: 1 }} paused={false} />);
-  expect(screen.getByText("혹시 딴짓 중이야?")).toBeTruthy();
+  expect(document.querySelector('[data-dialogue-stage="1"]')?.textContent).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: label }));
   await waitFor(() => expect(activityApi.respond).toHaveBeenCalledExactlyOnceWith(42, choice));
 });

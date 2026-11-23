@@ -1,10 +1,11 @@
 export type Video = { title: string; video_id: string };
 import type { InterventionStage } from "./intervention";
-export type CloudState = { id: number; task: string; ask: Video | null; reason: string; stage?: InterventionStage };
+import { createDialogueSelector, isDialogueRequest, type DialogueRequest, type DialogueSelection } from "./dialogue";
+export type CloudState = { id: number; task: string; ask: Video | null; reason: string; stage?: InterventionStage; dialogueId?: string };
 export type ResponseMode = "return" | "study";
 export type VideoResponse = { video: string; mode: ResponseMode; at: number };
 type Snapshot = { value: CloudState | null; dismissed: VideoResponse[] };
-type Message = { type: "reset" | "state" | "read" | "dismiss" | "change" | "changed"; owner?: string; revision?: number; request?: string; snapshot?: Snapshot; session?: number; video?: string; mode?: ResponseMode; task?: string; error?: string };
+type Message = { type: "reset" | "state" | "read" | "dismiss" | "change" | "changed" | "dialogue" | "dialogue-selected"; owner?: string; revision?: number; request?: string; snapshot?: Snapshot; session?: number; video?: string; mode?: ResponseMode; task?: string; error?: string; dialogue?: DialogueRequest; selection?: DialogueSelection };
 type ChangeHandler = (task: string) => Promise<boolean>;
 export interface MemoryPort {
   postMessage(message: Message): void;
@@ -23,6 +24,23 @@ export function createCloudMemory(owner: boolean, port?: MemoryPort) {
   // 위젯의 "할 일 바꾸기" 입력은 메인 화면의 컨트롤러가 처리한다.
   let changeHandler: ChangeHandler | null = null;
   const changes = new Map<string, { resolve: () => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+  let selectDialogue = createDialogueSelector();
+  const pendingDialogue = new Map<string, (selection: DialogueSelection) => void>();
+  function dialogue(event: DialogueRequest): DialogueSelection | Promise<DialogueSelection> {
+    if (owner || !port) return selectDialogue(event);
+    return new Promise(resolve => {
+      const request = crypto.randomUUID();
+      const finish = (selection: DialogueSelection) => {
+        clearTimeout(timer);
+        pendingDialogue.delete(request);
+        resolve(selection);
+      };
+      const timer = setTimeout(() => finish(selectDialogue(event)), 600);
+      pendingDialogue.set(request, finish);
+      try { port.postMessage({ type: "dialogue", request, dialogue: event }); }
+      catch { finish(selectDialogue(event)); }
+    });
+  }
   async function runChange(task: string) {
     if (!changeHandler) throw new Error("메인 화면이 준비되지 않았어요.");
     if (!(await changeHandler(task))) throw new Error("할 일을 바꾸지 못했어요.");
@@ -52,7 +70,7 @@ export function createCloudMemory(owner: boolean, port?: MemoryPort) {
     if (snapshot.value?.id !== session) return;
     const value = snapshot.value;
     if (value.ask?.video_id !== video && mode !== "study") return;
-    snapshot = { value: value.ask?.video_id === video ? { ...value, ask: null, reason: "", stage: undefined } : value,
+    snapshot = { value: value.ask?.video_id === video ? { ...value, ask: null, reason: "", stage: undefined, dialogueId: undefined } : value,
       dismissed: [...snapshot.dismissed.filter(item => item.video !== video), { video, mode, at: Date.now() }] };
     revision++;
     publish();
@@ -74,6 +92,10 @@ export function createCloudMemory(owner: boolean, port?: MemoryPort) {
   if (port) port.onmessage = ({ data }) => {
     if (!data || typeof data !== "object") return;
     if (owner) {
+      if (data.type === "dialogue" && data.request && isDialogueRequest(data.dialogue)) {
+        port.postMessage({ type: "dialogue-selected", owner: identity, request: data.request, selection: selectDialogue(data.dialogue) });
+        return;
+      }
       if (data.type === "change" && typeof data.task === "string" && data.request) {
         const request = data.request;
         void runChange(data.task).then(
@@ -83,6 +105,12 @@ export function createCloudMemory(owner: boolean, port?: MemoryPort) {
       }
       if (data.type === "dismiss" && typeof data.session === "number" && typeof data.video === "string") dismiss(data.session, data.video, data.mode === "study" ? "study" : "return");
       if (data.type === "read" || data.type === "dismiss") sendState(data.request);
+      return;
+    }
+    const selection = data.selection;
+    if (data.type === "dialogue-selected" && data.request && typeof selection?.template === "string" &&
+        (selection.stage === 1 || selection.stage === 2 || selection.stage === 3)) {
+      if (!authority || authority === data.owner) pendingDialogue.get(data.request)?.(selection);
       return;
     }
     if (data.type === "changed" && data.request) {
@@ -108,6 +136,7 @@ export function createCloudMemory(owner: boolean, port?: MemoryPort) {
     dismissed: () => snapshot.dismissed.map(item => item.video),
     responses: () => snapshot.dismissed,
     set,
+    dialogue,
     dismiss: (session: number, video: string, mode?: ResponseMode) => request("dismiss", session, video, mode),
     refresh: () => request("read"),
     change: requestChange,
@@ -121,6 +150,7 @@ export function createCloudMemory(owner: boolean, port?: MemoryPort) {
     reset() {
       if (!owner) return;
       snapshot = { value: null, dismissed: [] };
+      selectDialogue = createDialogueSelector();
       revision++;
       publish();
       sendState(undefined, true);
