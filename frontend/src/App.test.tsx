@@ -36,6 +36,31 @@ async function start() {
 }
 
 describe("C landing one-line focus flow", () => {
+  it("opens and ends the local web experience during an existing session without mutating it", async () => {
+    render(<App />);
+    await start();
+    const active = sessionStore.getSnapshot().session;
+    fireEvent.click(screen.getByRole("button", { name: "웹에서 체험하기" }));
+    const input = await screen.findByLabelText("체험용 할 일");
+    fireEvent.change(input, { target: { value: "체험 목표" } });
+    fireEvent.click(screen.getByRole("button", { name: "체험 시작" }));
+    fireEvent.change(screen.getByLabelText("가상의 활동 선택"), { target: { value: "game" } });
+    for (let i = 0; i < 3; i++) fireEvent.click(screen.getByRole("button", { name: "다음 개입 단계" }));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "체험 종료" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.getByRole("heading", { name: "지금 집중하는 목표" })).toBeTruthy();
+    expect(sessionStore.getSnapshot().session).toEqual(active);
+    expect(requests).toEqual([{ path: "/sessions", method: "POST", body: { task: "전자기 유도 공부" } }]);
+  });
+  it("shows the install path on web and hides the web-only actions on desktop", () => {
+    const web = render(<App />);
+    expect(screen.getByRole("link", { name: "실제 사용하기" }).getAttribute("href")).toBe("/install.html");
+    web.unmount();
+    vi.spyOn(desktop, "isDesktop").mockReturnValue(true);
+    render(<App />);
+    expect(screen.queryByRole("button", { name: "웹에서 체험하기" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "실제 사용하기" })).toBeNull();
+  });
   it("persists the opt-in tone across app remounts", () => {
     const view = render(<App />);
     openSettings();

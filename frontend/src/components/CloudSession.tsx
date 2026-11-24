@@ -6,7 +6,7 @@ import { sessionStore, useFocusSession } from "../session/store";
 import { backgroundVideo, shouldAsk } from "./videoPolicy";
 import type { Judgment } from "./videoPolicy";
 import { escalation, InterventionClock } from "./intervention";
-import { ultimateArt } from "../widget/character";
+import UltimateDialog from "./UltimateDialog";
 import type { Activity, Incident } from "../activity/bridge";
 import InactivityQuestion from "../activity/InactivityQuestion";
 import { announceReply, interventionLine, ResponseButtons, useTone } from "./persona";
@@ -89,29 +89,16 @@ export function CloudQuestion() {
 export function UltimateOverlay({ onEnd, inactivity }: { onEnd?: () => void; inactivity?: Incident | null } = {}) {
   const value = useCloudSession();
   const [tone] = useTone();
-  const dialog = useRef<HTMLDivElement>(null);
   const open = !!inactivity || (!!value?.ask && value.stage === 3);
-  useEffect(() => { if (open) dialog.current?.focus(); }, [open]);
   if (!open) return null;
-  return <div className="ultimate-overlay" ref={dialog} tabIndex={-1} role="alertdialog" aria-modal="true" aria-label="안뇽이 궁극기"
-    onKeyDown={event => {
-      if (event.key !== "Tab") return;
-      const buttons = [...(dialog.current?.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled)") ?? [])];
-      if (!buttons.length) { event.preventDefault(); return; }
-      const first = buttons[0], last = buttons[buttons.length - 1];
-      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) { event.preventDefault(); last.focus(); }
-      else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialog.current)) { event.preventDefault(); first.focus(); }
-    }}>
-    <div className="ultimate-visual"><img className="ultimate-art" src={ultimateArt} alt="안뇽이 궁극기" /></div>
-    <div className="ultimate-card">
+  return <UltimateDialog>
       <h1>{interventionLine(tone, inactivity ? "inactivity" : "youtube", 3, inactivity?.id ?? value?.id ?? 0)}</h1>
       {inactivity ? <InactivityQuestion incident={inactivity} fullscreen /> : value?.ask && <>
         <p className="ultimate-video">{value.ask.title} · {value.reason} · AI의 추정</p>
         <QuestionActions value={value} />
       </>}
       {onEnd && <button className="text-button" onClick={onEnd}>집중 세션 종료</button>}
-    </div>
-  </div>;
+  </UltimateDialog>;
 }
 // Exactly one controller lives in the main window. Widget views only subscribe
 // with useCloudSession/useFocusSession and never create another server session.
@@ -379,6 +366,6 @@ export default function CloudSession() {
     <p>{isDesktop() ? "YouTube 연결에서 로컬 관측을 켜면 확인 질문이 위젯에 자동으로 표시됩니다." : "웹에서는 세션 시작·종료와 계획 관리를 제공합니다. 자동 YouTube 관측과 독립 위젯은 Windows 앱 및 Chrome 확장이 필요합니다."}</p>
     {value && <p>집중 중 · {value.task} <button disabled={busy} onClick={() => void end(value.id)}>세션 종료</button></p>}
     <CloudQuestion />{error && <p role="alert">{error}</p>}
-    <p><a href="/install.html" target="_blank" rel="noreferrer">Windows·Chrome 설치 안내</a> · <a href="https://github.com/isabel0813/IN-VIBE/releases/download/v0.2.0-incamp-20261114/Mobonyong-Windows-MVP.zip">Windows 시험판 다운로드</a></p>
+    <p><a href="/install.html" target="_blank" rel="noreferrer">Windows·Chrome 설치 안내</a></p>
   </section>;
 }

@@ -1761,6 +1761,76 @@ button.link:hover {
   color: #284358;
 }
 .tone-settings label { display: block; margin: 6px 0; }
+
+.web-entry-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0 8px;
+}
+.web-entry-links button.link,
+.web-entry-links a {
+  padding: 0;
+  color: #2b5371;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.web-experience .experience-task,
+.web-experience .experience-line,
+.web-experience .pet-bubble p,
+.ultimate-card .experience-line { overflow-wrap: anywhere; }
+.web-experience .experience-scenario {
+  display: grid;
+  gap: 6px;
+  margin-block: 16px 8px;
+  font-weight: 700;
+}
+.web-experience .experience-scenario select {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: inherit;
+  font: inherit;
+}
+.web-experience .experience-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+.web-experience .experience-preview {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-block: 16px;
+}
+.web-experience .pet-character {
+  position: relative;
+  flex: 0 0 80px;
+  cursor: default;
+  touch-action: auto;
+}
+.web-experience .pet-bubble {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  max-height: none;
+}
+.web-experience .cloud-question-actions { flex-wrap: wrap; }
+@media (max-width: 440px) {
+  .web-experience .experience-preview {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+  }
+  .web-experience .experience-preview .pet-character { align-self: flex-start; }
+}
 @media (max-height: 650px) {
   .ultimate-overlay { padding-block: 8px; gap: 6px; }
   .ultimate-card { max-height: 60vh; padding-block: 8px; }

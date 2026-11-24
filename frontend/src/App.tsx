@@ -11,6 +11,7 @@ import { WebWidgetPreview } from "./widget/Widget";
 import { ReplyNotice, useReply, useTone } from "./components/persona";
 
 const LegacyPlanner = lazy(() => import("./LegacyPlanner"));
+const WebExperience = lazy(() => import("./experience/WebExperience"));
 type View = "focus" | "settings" | "legacy";
 
 export default function App() {
@@ -18,6 +19,8 @@ export default function App() {
   const reply = useReply();
   const [view, setView] = useState<View>("focus");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [experience, setExperience] = useState(false);
+  const experienceEntry = useRef<HTMLButtonElement>(null);
   // 위젯의 "할 일 바꾸기"로 들어오면 입력칸을 다시 열어 새 할 일을 받는다.
   const [changing, setChanging] = useState(false);
   const taskInput = useRef<HTMLInputElement>(null);
@@ -27,6 +30,8 @@ export default function App() {
   const [windowError, setWindowError] = useState("");
   const { session, value, task, setTask, ready, busy, error } = focus;
   const ultimate = (value?.stage === 3 && !!value.ask) || !!focus.inactivityUltimate;
+  const web = !isDesktop();
+  const experiencing = web && experience;
   // 위젯에서 정한 쉬는 시간이 끝나면 메인 창이 세션을 다시 시작한다.
   useAutoResume();
 
@@ -34,7 +39,7 @@ export default function App() {
     let cancelled = false;
     let dispose: (() => void) | undefined;
     void onNavigate(target => {
-      setView("focus"); setMenuOpen(false);
+      setView("focus"); setMenuOpen(false); setExperience(false);
       if (target === "input") setChanging(true);
     }).then(stop => {
       if (cancelled) stop(); else dispose = stop;
@@ -54,7 +59,11 @@ export default function App() {
     requestAnimationFrame(() => { taskInput.current?.focus(); taskInput.current?.select(); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [changing, session.running]);
-  function navigate(next: View) { setView(next); setMenuOpen(false); }
+  function navigate(next: View) { setView(next); setMenuOpen(false); setExperience(false); }
+  function leaveExperience() {
+    setExperience(false);
+    requestAnimationFrame(() => experienceEntry.current?.focus());
+  }
   async function changeTask() {
     if (await focus.change(task)) setChanging(false);
   }
@@ -92,16 +101,16 @@ export default function App() {
         <section className="menu-section">
           <h2>설치</h2>
           <a href="/install.html" target="_blank" rel="noreferrer">Windows·Chrome 설치 안내</a>
-          <a href="https://github.com/isabel0813/IN-VIBE/releases/download/v0.3.2-test-20261118/Mobonyong-Windows-v0.3.2-test-20261118.zip">Windows 시험판 다운로드</a>
+          <a href="/install.html#download-title">Windows 시험판 받기</a>
         </section>
       </aside>
 
-      <main id={view === "legacy" ? undefined : "main-content"} className={view === "focus" ? "home-main" : "page-main"}>
-        {(error || windowError || syncError) && <div className="focus-notice" role="alert">
+      <main id={view === "legacy" ? undefined : "main-content"} className={view === "focus" && !experiencing ? "home-main" : "page-main"}>
+        {!experiencing && (error || windowError || syncError) && <div className="focus-notice" role="alert">
           <span>{error || windowError || syncError}</span>
           {syncError && <button className="text-button" onClick={() => void sessionStore.sync()}>다시 동기화</button>}
         </div>}
-        <section className="home-hero" aria-label="한 줄 집중 세션" hidden={view !== "focus"}>
+        <section className="home-hero" aria-label="한 줄 집중 세션" hidden={view !== "focus" || experiencing}>
           <div className="hero-character"><img src={annyongArt} alt="안뇽이 캐릭터" /></div>
           <h1>{session.running ? "지금 집중하는 목표" : "오늘 끝낼 일은?"}</h1>
           <p className="hero-sub">{session.running ? "잠깐 돌아와도 괜찮아. 준비되면 이어서 하자." : "자세히 적을수록 안뇽이가 더 잘 알아볼 수 있어!"}</p>
@@ -123,10 +132,17 @@ export default function App() {
             <span aria-hidden="true">·</span>
             <button className="link" disabled={busy || !ready} onClick={() => void end()}>세션 종료</button>
           </div>}
-          {!isDesktop() && <p className="hero-note">웹 미리보기 · 독립 위젯과 YouTube 관측은 Windows 앱에서 사용할 수 있어요.</p>}
+          {web && <p className="hero-note web-entry-links">
+            <button className="link" type="button" ref={experienceEntry} onClick={() => setExperience(true)}>웹에서 체험하기</button>
+            <span aria-hidden="true">·</span>
+            <span><a href="/install.html">실제 사용하기</a> (Windows 앱 + Chrome 확장)</span>
+          </p>}
           <CloudQuestion />
           {!value?.ask && !activity.incident && reply && session.task && <ReplyNotice mode={reply.mode} task={session.task.name} />}
         </section>
+        {experiencing && <Suspense fallback={<p role="status">웹 체험을 불러오고 있어요.</p>}>
+          <WebExperience initialTask={task} onExit={leaveExperience} />
+        </Suspense>}
         <section className="focus-settings-content" aria-label="집중 설정" hidden={view !== "settings"}>
           <div className="page-head">
             <button className="back-button" aria-label="집중 화면으로 돌아가기" onClick={() => navigate("focus")}><Icon name="back" />뒤로</button>
@@ -148,7 +164,7 @@ export default function App() {
       </main>
     </div>
     {view === "legacy" && <><div className="legacy-return"><button className="text-button" onClick={() => navigate("focus")}>한 줄 집중 화면으로</button></div><Suspense fallback={<p role="status">기존 작업 화면을 불러오고 있어요.</p>}><LegacyPlanner embedded /></Suspense></>}
-    {!isDesktop() && <WebWidgetPreview />}
+    {web && <div hidden={experiencing}><WebWidgetPreview /></div>}
     <UltimateOverlay onEnd={() => void end()} inactivity={focus.inactivityUltimate} />
   </>;
 }
