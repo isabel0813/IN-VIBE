@@ -17,6 +17,10 @@ assert.match(installer, /tester-beta\.nsh/);
 assert.match(installer, /beta-host\\in-vibe-native-host\.exe/);
 assert.match(installer, /!insertmacro NSIS_HOOK_POSTINSTALL/);
 assert.match(installer, /!insertmacro NSIS_HOOK_PREUNINSTALL/);
+const hooks = readFileSync(join(root, "frontend", "src-tauri", "installer", "tester-beta.nsh"), "utf8");
+assert.ok(hooks.includes("Software\\Google\\Chrome\\NativeMessagingHosts\\io.invibe.annyong.youtube"));
+assert.match(hooks, /ExecWait .*--write-beta-manifest/);
+assert.ok(hooks.includes('WriteRegStr HKCU "${MOBONYONG_HOST_KEY}" "" "${MOBONYONG_MANIFEST}"'));
 assert.ok(app.includes("io.invibe.annyong.beta"));
 assert.ok(app.includes("connect-src ipc: http://ipc.localhost https://api.mobonyong.com"));
 
@@ -54,13 +58,13 @@ try {
   const run = (arg) => spawnSync(host, [arg], { windowsHide: true, input: Buffer.alloc(0), timeout: 8000 });
   assert.equal(run("--write-beta-manifest").status, 0);
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-  const origin = "chrome-extension://ohajfkkemocajnjlbnogdmoominkejci/";
+  const origin = "chrome-extension://nndjojfhmpbolfifcfdcpalcloanppod/";
   assert.deepEqual(manifest.allowed_origins, [origin]);
   assert.equal(manifest.name, name);
   assert.equal(manifest.path, host);
   // Empty stdin validates the origin and exits before opening a live app pipe.
   assert.equal(run(origin).status, 0);
-  assert.equal(run("chrome-extension://nndjojfhmpbolfifcfdcpalcloanppod/").status, 1);
+  assert.equal(run("chrome-extension://ohajfkkemocajnjlbnogdmoominkejci/").status, 1);
   assert.equal(run("chrome-extension://medfdpmihlebgmbcocmifcafedbdcoji/").status, 1);
 } finally {
   rmSync(host, { force: true });

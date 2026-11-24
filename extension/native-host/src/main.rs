@@ -17,7 +17,7 @@ fn beta_manifest(exe: &std::path::Path) -> Result<Vec<u8>, serde_json::Error> {
         "description": "Mobonyong Windows Beta",
         "path": exe,
         "type": "stdio",
-        "allowed_origins": ["chrome-extension://ohajfkkemocajnjlbnogdmoominkejci/"]
+        "allowed_origins": ["chrome-extension://nndjojfhmpbolfifcfdcpalcloanppod/"]
     }))
 }
 
@@ -36,7 +36,7 @@ fn installer_manifest_is_utf8_and_escapes_windows_paths() {
     let json: serde_json::Value = serde_json::from_slice(&beta_manifest(exe).unwrap()).unwrap();
     assert_eq!(json["path"], exe.to_str().unwrap());
     assert_eq!(json["name"], HOST);
-    assert_eq!(json["allowed_origins"], serde_json::json!(["chrome-extension://ohajfkkemocajnjlbnogdmoominkejci/"]));
+    assert_eq!(json["allowed_origins"], serde_json::json!(["chrome-extension://nndjojfhmpbolfifcfdcpalcloanppod/"]));
 }
 #[cfg(windows)]
 fn run() -> Result<(), Box<dyn std::error::Error>> {

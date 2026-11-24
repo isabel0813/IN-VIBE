@@ -51,7 +51,7 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
     moved: boolean;
   } | null>(null);
   const moved = useRef(false);
-  const lastPrompt = useRef<{ key: string; stage: number } | null>(null);
+  const shownPrompts = useRef(new Map<string, { answeredAt?: number; stage: number }>());
   const windowActions = useRef(Promise.resolve());
   // 일시정지 쉬는 시간 (분). 일시정지 버튼에 마우스를 올리면 고른다.
   const [breakMinutes, setBreakMinutes] = useState(10);
@@ -66,6 +66,7 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
   const promptKey = question ? `youtube:${cloud?.id}:${question.video_id}`
     : inactivityStage !== undefined ? `inactivity:${incident?.id}` : undefined;
   const promptStage = question ? cloud?.stage ?? 1 : inactivityStage ?? 0;
+  const answeredAt = question ? cloudMemory.responses().find(response => response.video === question.video_id)?.at : undefined;
   const character = question || inactivityStage === 1 || inactivityStage === 2 ? "suspect" : session.character;
   const copy = characterCopy[character];
   const nudge = question ? (cloud?.stage === 2 ? "목표 다시 확인" : "목표 확인")
@@ -130,10 +131,11 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
 
   useEffect(() => {
     if (!ready || !windowReady) return;
-    const previous = lastPrompt.current;
-    lastPrompt.current = promptKey ? { key: promptKey, stage: promptStage } : null;
+    if (!session.running) shownPrompts.current.clear();
     if (promptKey && promptStage !== 3) {
-      if (previous?.key !== promptKey || previous.stage === 3 || promptStage > previous.stage) {
+      const previous = shownPrompts.current.get(promptKey);
+      if (promptStage > 0 && (!previous || previous.answeredAt !== answeredAt || promptStage > previous.stage)) {
+        shownPrompts.current.set(promptKey, { answeredAt, stage: promptStage });
         void bubble(true, true);
       }
     } else if (reply && canIntervene && promptStage !== 3) {
@@ -142,7 +144,7 @@ export default function Widget({ native = isDesktop() }: { native?: boolean }) {
       && (!canIntervene || session.character !== "recovery")))) {
       void bubble(false);
     }
-  }, [ready, windowReady, promptKey, promptStage, layout.open, layout.automatic, reply, canIntervene, session.character, bubble]);
+  }, [ready, windowReady, promptKey, promptStage, answeredAt, layout.open, layout.automatic, reply, canIntervene, session.running, session.character, bubble]);
 
   useEffect(() => {
     if (!layout.open) return;

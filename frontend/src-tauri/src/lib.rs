@@ -326,12 +326,22 @@ fn hide_ultimate_for(app: &AppHandle, state: &AppState, source: Option<UltimateS
     let Some(previous) = previous else { return Ok(()); };
     let restore = || {
         let main = window(app, "main")?;
-        native(main.set_fullscreen(previous.fullscreen))?;
-        if previous.hide_main {
-            native(main.hide())?;
-        } else if previous.minimize_main {
-            native(main.minimize())?;
-        }
+        #[cfg(windows)]
+        set_ultimate_cloaked(&main, true)?;
+        let placement = native(main.set_fullscreen(previous.fullscreen)).and_then(|()| {
+            if previous.hide_main {
+                native(main.hide())
+            } else {
+                native(main.show())?;
+                if previous.minimize_main {
+                    native(main.minimize())?;
+                }
+                Ok(())
+            }
+        });
+        #[cfg(windows)]
+        let placement = placement.and(set_ultimate_cloaked(&main, false));
+        placement?;
         if previous.restore_widget { native(window(app, "widget")?.show())?; }
         Ok(())
     };
@@ -373,12 +383,74 @@ fn ultimate_show(caller: WebviewWindow, app: AppHandle, state: State<'_, AppStat
         minimize_main: native(main.is_minimized())?,
         source: inactivity_id.map_or(UltimateSource::Youtube, UltimateSource::Inactivity),
     };
-    native(main.set_fullscreen(true))?;
     *state.ultimate.lock().map_err(|e| e.to_string())? = Some(previous);
-    let display = native(widget.hide()).and_then(|()| native(main.unminimize())).and_then(|()| native(main.show())).and_then(|()| native(main.set_focus()));
+    let display = native(widget.hide()).and_then(|()| show_ultimate_window(&main, previous));
     if let Err(error) = display {
         let _ = hide_ultimate(&app, &state);
         return Err(error);
+    }
+    Ok(())
+}
+
+fn show_ultimate_window(main: &WebviewWindow, previous: UltimateWindow) -> Result<()> {
+    #[cfg(windows)]
+    set_ultimate_cloaked(main, true)?;
+    let display = (|| {
+        let monitor = native(main.current_monitor())?
+            .or(native(main.primary_monitor())?)
+            .ok_or("궁극기를 표시할 모니터를 찾지 못했어요.")?;
+        let origin = monitor.position();
+        // Restore and show while cloaked so neither operation can replace the
+        // fullscreen bounds or expose the restored size to the user.
+        if previous.minimize_main {
+            native(main.unminimize())?;
+        }
+        #[cfg(windows)]
+        native(main.show())?;
+        if !previous.fullscreen {
+            native(main.set_fullscreen_on_monitor(PhysicalPosition::new(
+                f64::from(origin.x),
+                f64::from(origin.y),
+            )))?;
+        }
+        #[cfg(not(windows))]
+        native(main.show())?;
+        #[cfg(windows)]
+        if !native(main.is_fullscreen())?
+            || native(main.outer_position())? != *origin
+            || native(main.outer_size())? != *monitor.size()
+        {
+            return Err("모니터 전체 크기로 창을 표시하지 못했어요.".into());
+        }
+        Ok(())
+    })();
+    if let Err(error) = display {
+        // Do not reveal a partially prepared window. The caller restores it.
+        let _ = main.hide();
+        #[cfg(windows)]
+        let _ = set_ultimate_cloaked(main, false);
+        return Err(error);
+    }
+    #[cfg(windows)]
+    set_ultimate_cloaked(main, false)?;
+    native(main.set_focus())
+}
+
+#[cfg(windows)]
+fn set_ultimate_cloaked(main: &WebviewWindow, cloaked: bool) -> Result<()> {
+    use windows_sys::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_CLOAK};
+    let hwnd = native(main.hwnd())?.0 as _;
+    let value = i32::from(cloaked);
+    let result = unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_CLOAK as u32,
+            (&value as *const i32).cast(),
+            std::mem::size_of::<i32>() as u32,
+        )
+    };
+    if result < 0 {
+        return Err(format!("궁극기 창 표시 상태를 바꾸지 못했어요. (HRESULT {result:#010x})"));
     }
     Ok(())
 }

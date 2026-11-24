@@ -110,6 +110,65 @@ describe("Annyong widget preview behavior", () => {
     });
     expect(screen.queryByRole("dialog")).toBeNull();
   });
+  it("does not reopen the same automatic stage across lost or switched observations", async () => {
+    await sessionStore.send({ type: "start", task: { id: 99, name: "공부" } });
+    vi.mocked(useActivity).mockReturnValue({
+      activity: { ...emptyActivity, consent: true }, error: "", ready: true,
+    });
+    let emitLayout = (_layout: WidgetLayout) => {};
+    vi.spyOn(nativeWidget, "listenLayout").mockImplementation(async callback => {
+      emitLayout = callback;
+      return () => {};
+    });
+    vi.spyOn(nativeWidget, "readLayout").mockResolvedValue(closedLayout);
+    const resize = vi.spyOn(nativeWidget, "bubble").mockImplementation(async (open, automatic = false) => {
+      const next = { ...closedLayout, open, automatic };
+      emitLayout(next);
+      return next;
+    });
+    const value = { id: 99, task: "공부", ask: { title: "합성 영상", video_id: "abcdefghijk" }, reason: "합성 판단", stage: 1 as const };
+    render(<Widget native />);
+    await act(() => cloudMemory.set(value));
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+    const openings = () => resize.mock.calls.filter(([open, automatic]) => open && automatic);
+    expect(openings()).toHaveLength(1);
+
+    // The controller withdraws the question on ads, pause or missing samples.
+    for (let gap = 0; gap < 3; gap++) {
+      await act(() => cloudMemory.set({ ...value, ask: null, stage: undefined }));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      await act(() => cloudMemory.set({ ...value, dialogueId: `reobserved-${gap}` }));
+    }
+    expect(openings()).toHaveLength(1);
+
+    const second = { ...value, stage: 2 as const };
+    await act(() => cloudMemory.set(second));
+    expect(openings()).toHaveLength(2);
+    await act(() => cloudMemory.set({ ...second, ask: { ...value.ask, video_id: "lmnopqrstuv" } }));
+    expect(openings()).toHaveLength(3);
+    await act(() => cloudMemory.set(second));
+    expect(openings()).toHaveLength(3);
+
+    const incident = { id: 7, kind: "inactivity" as const, stage: 1, startedAt: 0, seconds: 300, process: "", title: "", claimed: false };
+    vi.mocked(useActivity).mockReturnValue({
+      activity: { ...emptyActivity, consent: true, incident }, error: "", ready: true,
+    });
+    // A native inactivity incident underneath a YouTube question must not open another bubble.
+    await act(() => cloudMemory.set(second));
+    expect(openings()).toHaveLength(3);
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(screen.getByLabelText("YouTube 활동 확인")).toBeTruthy();
+
+    // The controller owns the existing grace periods. Its next prompt after
+    // that period must be eligible even when it goes back to stage 1.
+    await act(() => cloudMemory.dismiss(value.id, value.ask.video_id, "study"));
+    vi.mocked(useActivity).mockReturnValue({
+      activity: { ...emptyActivity, consent: true }, error: "", ready: true,
+    });
+    await act(() => cloudMemory.set(value));
+    expect(openings()).toHaveLength(5); // one inactivity, then one rearmed YouTube
+  });
+
   it("only opens on click and closes on Escape or outside pointerdown", () => {
     render(<Widget native={false} />);
     expect(screen.queryByRole("dialog")).toBeNull();
