@@ -16,21 +16,21 @@
   <header>
     <a href="/">← 뭐보뇽 웹으로 돌아가기</a>
     <h1>Windows 앱과 Chrome 확장 설치</h1>
-    <p>뭐보뇽 Tester Beta v2 (0.3.7) · Windows x64</p>
-    <p>실제 활동 감지에는 Windows 앱과 동봉 Chrome 확장이 모두 필요해요. 하나의 ZIP에 들어 있어요.</p>
+    <p>뭐보뇽 Tester Beta v3 (0.3.8) store-r1 · Windows x64</p>
+    <p>실제 활동 감지를 사용하려면 Windows 앱을 설치하고 공식 Chrome 웹 스토어 확장을 추가하세요.</p>
   </header>
   <main>
     <section aria-labelledby="download-title">
-      <h2 id="download-title">통합 ZIP 받기</h2>
-      <p><a href="https://drive.google.com/file/d/1lNdp2kqzfNYiJFa1brswOn5e6ye_iang/view?usp=drivesdk">Mobonyong-Tester-Beta-v2.zip · Google Drive</a></p>
-      <p class="access">현재 공개 다운로드는 준비 중이에요. 접근 권한이 있다면 Google 계정으로 로그인해 받을 수 있어요. 권한 안내가 뜨면 Drive에서 액세스를 요청해 주세요.</p>
+      <h2 id="download-title">Windows 설치 파일 받기</h2>
+      <p><a href="https://github.com/isabel0813/IN-VIBE/releases/download/v0.3.8-tester-beta-v3-store-r1/Mobonyong-Tester-Beta-v3-store-r1.zip">Mobonyong-Tester-Beta-v3-store-r1.zip · GitHub</a> · <a href="https://github.com/isabel0813/IN-VIBE/releases/download/v0.3.8-tester-beta-v3-store-r1/Mobonyong-Tester-Beta-v3-store-r1-Windows-x64-setup.exe">설치 EXE 바로 받기</a></p>
+      <p class="access">GitHub 로그인 없이 받을 수 있어요. ZIP에는 설치 EXE, 한국어 안내, 체크섬이 들어 있어요. <a href="https://github.com/isabel0813/IN-VIBE/releases/download/v0.3.8-tester-beta-v3-store-r1/SHA256SUMS.txt">SHA256 체크섬 받기</a></p>
       <details>
         <summary>파일 SHA256 확인</summary>
         <dl>
-          <dt>Mobonyong-Tester-Beta-v2.zip</dt>
-          <dd><code>992761D865CA4F45D86D8134D8187EFB069F7F388FCF88568FBF03C8F1E45FB8</code></dd>
-          <dt>Mobonyong-Tester-Beta-v2-Windows-x64-setup.exe</dt>
-          <dd><code>BDADD4A6C4019BC87053C7D01394D33223C636D7AFFFCE42921C9178275F3E69</code></dd>
+          <dt>Mobonyong-Tester-Beta-v3-store-r1.zip</dt>
+          <dd><code>F1026454A2D232A7B00713BD084DBE1DA02EF8DF0F7A88FE60199F56ED6936E1</code></dd>
+          <dt>Mobonyong-Tester-Beta-v3-store-r1-Windows-x64-setup.exe</dt>
+          <dd><code>BD89C6A8BD0CF9EDF0FA6CE284C65C4E36BB08963328694F2E65AA503F510F7F</code></dd>
         </dl>
         <p>Windows PowerShell의 <code>Get-FileHash -Algorithm SHA256</code>으로 내려받은 ZIP과 압축을 푼 EXE의 해시를 계산해 위 값과 비교할 수 있어요. 압축 안의 <code>SHA256SUMS.txt</code>에는 동봉 파일의 해시도 들어 있어요.</p>
       </details>
@@ -39,25 +39,26 @@
     <section aria-labelledby="steps-title">
       <h2 id="steps-title">처음 설치하는 순서</h2>
       <ol>
-        <li>받은 ZIP을 오른쪽 클릭하고 <strong>모두 압축 풀기</strong>를 선택하세요.</li>
-        <li>집중 세션이 열려 있다면 종료한 뒤 앱과 Chrome을 닫으세요. <strong>Mobonyong-Tester-Beta-v2-Windows-x64-setup.exe</strong>를 실행하면 앱과 Chrome 연결 구성요소인 Native Host가 함께 설치돼요.</li>
-        <li>Chrome 주소창에 <code>chrome://extensions</code>를 입력하고 오른쪽 위 <strong>개발자 모드</strong>를 켜세요.</li>
-        <li><strong>압축해제된 확장 프로그램을 로드합니다</strong>를 누르고, 압축을 푼 폴더 안의 <code>extension</code> 폴더를 선택하세요. 로드한 폴더는 그 위치에 두세요.</li>
+        <li>ZIP을 받았다면 오른쪽 클릭하고 <strong>모두 압축 풀기</strong>를 선택하세요.</li>
+        <li>집중 세션이 열려 있다면 종료한 뒤 앱과 Chrome을 닫으세요. <strong>Mobonyong-Tester-Beta-v3-store-r1-Windows-x64-setup.exe</strong>를 실행하면 앱과 Chrome 연결 구성요소인 Native Host가 함께 설치돼요.</li>
+        <li><a href="https://chromewebstore.google.com/detail/nndjojfhmpbolfifcfdcpalcloanppod">Chrome 웹 스토어에서 안뇽이</a>를 열고 <strong>Chrome에 추가</strong>를 누르세요. 개발자 모드나 수동 Host 등록은 필요 없어요.</li>
         <li>시작 메뉴에서 <strong>Mobonyong Tester Beta</strong>를 열고, Chrome 퍼즐 메뉴의 <strong>안뇽이 · YouTube 공부 확인</strong> 팝업에서 앱 연결 표시와 관측 스위치를 확인하세요.</li>
         <li>앱의 <strong>감지·AI 설정</strong>에서 Windows 활동 감지에 동의하고 적용한 뒤, YouTube 로컬 관측을 켜세요. AI 판단은 별개 동의이며, 동의하면 작업명과 영상 제목·ID가 판단을 위해 서버로 전송될 수 있어요.</li>
-        <li>공부할 일을 한 줄로 입력하고 <strong>집중 시작</strong>을 누르세요. 실제 제품은 Windows 무입력 또는 AI 판단 후 유효 영상 관측 시간이 각각 1·5·10분에 이르면 개입해요.</li>
+        <li>공부할 일을 한 줄로 입력하고 <strong>집중 시작</strong>을 누르세요. Windows 무입력은 마지막 입력 이후 5·10·15분에 확인해요. YouTube는 AI 판단 후 유효 영상 관측 1·5·10분에 개입해요.</li>
       </ol>
     </section>
     <section aria-labelledby="connection-title">
       <h2 id="connection-title">확장 연결과 업데이트</h2>
       <h3>어떤 확장을 사용하나요?</h3>
-      <p>동봉 확장은 <strong>0.3.6</strong>이며, <code>chrome://extensions</code>에서 개발자 모드를 켜면 항목의 ID <code>ohajfkkemocajnjlbnogdmoominkejci</code>를 확인할 수 있어요. Tester 앱 ID는 <code>io.invibe.annyong.beta</code>, Host는 <code>io.invibe.annyong.youtube</code>예요.</p>
-      <p>Chrome 웹 스토어판(ID <code>nndjojfhmpbolfifcfdcpalcloanppod</code>)과 발표용 DEMO 확장은 ID가 달라 Tester Host와 호환되지 않아요. 어떤 팝업을 열었는지 헷갈리면 Tester를 쓰는 동안 그 확장만 잠시 끄고, ZIP에 동봉된 항목을 사용하세요.</p>
+      <p><a href="https://chromewebstore.google.com/detail/nndjojfhmpbolfifcfdcpalcloanppod">공식 Chrome 웹 스토어판</a> <strong>0.3.2</strong>를 사용하세요. 확장 ID는 <code>nndjojfhmpbolfifcfdcpalcloanppod</code>예요. Tester 앱 ID는 <code>io.invibe.annyong.beta</code>, Host는 <code>io.invibe.annyong.youtube</code>예요.</p>
+      <p>이전 ZIP의 개발용 확장과 발표용 DEMO 확장은 새 Tester Host와 연결되지 않아요. 이전 개발용 확장이 켜져 있으면 해당 항목만 끄세요.</p>
       <h3>연결 대기나 영상 대기가 계속돼요</h3>
-      <p>앱이 켜져 있고 동봉 확장의 관측 스위치가 켜져 있는지 확인하세요. 연결 대기가 계속되면 Chrome 메뉴에서 <strong>종료</strong>를 눌러 완전히 닫고 다시 여세요. 확장 폴더를 옮겼다면 현재 위치의 <code>extension</code> 폴더를 다시 로드하고, 설치 중 연결 오류가 있었다면 같은 계정에서 설치 EXE를 다시 실행하세요.</p>
+      <p>앱이 켜져 있고 공식 스토어 확장의 관측 스위치가 켜져 있는지 확인하세요. 연결 대기가 계속되면 Chrome 메뉴에서 <strong>종료</strong>를 눌러 완전히 닫고 다시 여세요. 설치 중 연결 오류가 있었다면 같은 계정에서 설치 EXE를 다시 실행하세요.</p>
       <p>연결은 됐지만 영상 대기라면 집중 세션과 감지 동의를 확인하고, 화면에 보이는 선택된 탭에서 일반 YouTube 영상을 재생해 보세요. 광고나 일시정지 중에는 영상 시간이 쌓이지 않아요.</p>
       <h3>기존 Tester판을 업데이트하려면?</h3>
-      <p>앱과 Chrome을 정상 종료하고, 같은 Windows 계정에서 기존 설치 경로를 유지해 새 EXE를 실행하세요. 앱 데이터 삭제 옵션이 나오면 선택하지 마세요. 기존 동봉 확장이 같은 ID로 작동하면 계속 쓸 수 있어요. 설치 후 Windows 활동 감지·YouTube 로컬 관측·AI 판단 설정을 각각 확인하세요.</p>
+      <p>앱과 Chrome을 정상 종료하고, 같은 Windows 계정에서 기존 설치 경로를 유지해 새 EXE를 실행하세요. 앱 데이터 삭제 옵션이 나오면 선택하지 마세요. 같은 0.3.8이 설치되어 있다면 다시 설치를 선택하세요. 설치 후 Windows 활동 감지·YouTube 로컬 관측·AI 판단 설정을 각각 확인하세요.</p>
+      <h3>베타 검증 범위</h3>
+      <p>공식 확장으로 실제 YouTube 영상이 앱에 전달되어 말풍선까지 표시되는 전체 흐름과 듀얼 모니터 동작은 미검증이에요. 현재 스토어 확장은 PiP 관측을 지원하지 않아요.</p>
     </section>
   </main>
   <footer><a href="/privacy.html">개인정보처리방침</a> · <a href="/">웹 체험과 한 줄 집중 화면</a></footer>
