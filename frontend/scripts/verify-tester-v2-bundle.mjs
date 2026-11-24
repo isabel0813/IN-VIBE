@@ -12,7 +12,7 @@ const app = readFileSync(join(release, "in-vibe.exe"));
 const installer = readFileSync(join(release, "nsis", "x64", "installer.nsi"), "utf8");
 assert.match(installer, /!define PRODUCTNAME "Mobonyong Tester Beta"/);
 assert.match(installer, /!define BUNDLEID "io\.invibe\.annyong\.beta"/);
-assert.match(installer, /!define VERSION "0\.3\.7"/);
+assert.match(installer, /!define VERSION "0\.3\.8"/);
 assert.match(installer, /tester-beta\.nsh/);
 assert.match(installer, /beta-host\\in-vibe-native-host\.exe/);
 assert.match(installer, /!insertmacro NSIS_HOOK_POSTINSTALL/);
@@ -28,6 +28,7 @@ const text = js.toString("utf8");
 assert.match(text, /firstMs:(?:6e4|60000),secondMs:(?:3e5|300000),ultimateMs:(?:6e5|600000)/);
 assert.ok(text.includes("도 시험 범위야? 나만 공지 못 봤네."));
 assert.ok(text.includes("보다가 과제 까먹은 거 아니지?"));
+assert.ok(text.includes("키보드나 마우스 입력이 없으면 5분, 10분, 15분에 확인해요."));
 assert.ok(text.includes("https://api.mobonyong.com"));
 assert.ok(!text.includes("http://127.0.0.1:8010"));
 
@@ -44,7 +45,7 @@ const embedded = readdirSync(build).some(dir => {
 });
 assert.ok(embedded, "The matching Tester Beta web entry is embedded in the installer application");
 
-const sandbox = mkdtempSync(join(tmpdir(), "mobonyong-beta-v2-host-"));
+const sandbox = mkdtempSync(join(tmpdir(), "mobonyong-beta-v3-host-"));
 const host = join(sandbox, "in-vibe-native-host.exe");
 const name = "io.invibe.annyong.youtube";
 const manifestPath = join(sandbox, `${name}.json`);
@@ -67,4 +68,4 @@ try {
   rmdirSync(sandbox);
 }
 
-console.log("Tester Beta bundle, embedded web entry, 1/5/10-minute stages and installer Host origin passed.");
+console.log("Tester Beta bundle, embedded web entry, Windows 5/10/15-minute guidance, YouTube 1/5/10-minute stages and installer Host origin passed.");

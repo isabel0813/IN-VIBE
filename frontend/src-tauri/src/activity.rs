@@ -3,8 +3,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 pub const INACTIVITY_MS: u64 = 60_000;
-const SECOND_CHECK_MS: u64 = 300_000;
-const FINAL_CHECK_MS: u64 = 600_000;
+const FIRST_CHECK_MS: u64 = 300_000;
+const SECOND_CHECK_MS: u64 = 600_000;
+const FINAL_CHECK_MS: u64 = 900_000;
 
 pub struct LastInput {
     pub tick: u32,
@@ -298,7 +299,7 @@ impl Detector {
             3
         } else if elapsed >= SECOND_CHECK_MS {
             2
-        } else if elapsed >= INACTIVITY_MS {
+        } else if elapsed >= FIRST_CHECK_MS {
             1
         } else {
             0
@@ -508,38 +509,43 @@ mod inactivity_tests {
     }
 
     #[test]
-    fn one_five_and_ten_minutes_share_the_same_last_input_and_silence_is_not_a_response() {
+    fn five_ten_and_fifteen_minutes_share_the_same_last_input_and_silence_is_not_a_response() {
         let mut detector = Detector::default();
         detector.view.consent = true;
         let mut id = None;
-        for now in (0..=610_000).step_by(1000) {
+        for now in (0u64..=900_000)
+            .step_by(1000)
+            .flat_map(|now| [now.saturating_sub(1), now])
+        {
             update(&mut detector, now, 0);
             match now {
-                59_000 => assert_eq!(detector.inactivity_stage(), 0),
-                60_000 => {
+                299_999 => assert_eq!(detector.inactivity_stage(), 0),
+                300_000 => {
                     id = detector.inactivity_id();
                     assert!(id.is_some());
                     assert_eq!(detector.inactivity_stage(), 1);
                 }
-                299_000 => assert_eq!(detector.inactivity_stage(), 1),
-                300_000 => assert_eq!(detector.inactivity_stage(), 2),
-                599_000 => assert_eq!(detector.inactivity_stage(), 2),
-                600_000 => assert_eq!(detector.inactivity_stage(), 3),
+                599_999 => assert_eq!(detector.inactivity_stage(), 1),
+                600_000 => assert_eq!(detector.inactivity_stage(), 2),
+                899_999 => assert_eq!(detector.inactivity_stage(), 2),
+                900_000 => assert_eq!(detector.inactivity_stage(), 3),
                 _ => {}
             }
         }
         let incident = detector.view.incident.as_ref().unwrap();
         assert_eq!(Some(incident.id), id);
         assert_eq!(incident.started_at, 0);
-        assert_eq!(incident.seconds, 600);
+        assert_eq!(incident.seconds, 900);
         assert_eq!(detector.view.totals.confessions, 0);
         assert!(!incident.claimed);
         assert!(detector.can_show_inactivity_ultimate(incident.id));
         assert!(!detector.can_show_inactivity_ultimate(incident.id + 1));
-        detector.observe_inactivity(611_000, input(611_000, 0), true);
+        detector.observe_inactivity(901_000, input(901_000, 0), true);
         assert_eq!(detector.inactivity_stage(), 3);
         assert_eq!(detector.inactivity_id(), id);
-        detector.respond(incident_id(id), "studying", 611_000).unwrap();
+        detector
+            .respond(incident_id(id), "studying", 901_000)
+            .unwrap();
         assert!(detector.inactivity_id().is_none());
     }
 
@@ -547,28 +553,31 @@ mod inactivity_tests {
     fn input_before_fullscreen_restarts_the_clock_without_dropping_the_question() {
         let mut detector = Detector::default();
         detector.view.consent = true;
-        for now in (0..=60_000).step_by(1000) {
+        for now in (0..=FIRST_CHECK_MS).step_by(1000) {
             update(&mut detector, now, 0);
         }
         let id = detector.inactivity_id();
         assert!(id.is_some());
-        update(&mut detector, 61_000, 61_000);
+        let resumed_at = FIRST_CHECK_MS + 1000;
+        update(&mut detector, resumed_at, resumed_at as u32);
         assert_eq!(detector.inactivity_stage(), 0);
         assert_eq!(detector.inactivity_id(), id);
-        for now in (62_000..=160_000).step_by(1000) {
+        let last_input_at = resumed_at + 99_000;
+        for now in (resumed_at + 1000..=last_input_at).step_by(1000) {
             update(&mut detector, now, now as u32);
             assert_eq!(detector.inactivity_id(), id);
             assert_eq!(detector.inactivity_stage(), 0);
         }
-        for now in (161_000..220_000).step_by(1000) {
-            update(&mut detector, now, 160_000);
+        let next_check_at = last_input_at + FIRST_CHECK_MS;
+        for now in (last_input_at + 1000..next_check_at).step_by(1000) {
+            update(&mut detector, now, last_input_at as u32);
             assert_eq!(detector.inactivity_stage(), 0);
         }
-        update(&mut detector, 220_000, 160_000);
+        update(&mut detector, next_check_at, last_input_at as u32);
         assert_eq!(detector.inactivity_stage(), 1);
         assert_eq!(detector.inactivity_id(), id);
         detector
-            .respond(incident_id(id), "studying", 220_000)
+            .respond(incident_id(id), "studying", next_check_at)
             .unwrap();
         assert!(detector.inactivity_id().is_none());
     }
@@ -581,24 +590,31 @@ mod inactivity_tests {
     fn study_suppresses_the_same_interval_and_a_new_interval_can_prompt() {
         let mut detector = Detector::default();
         detector.view.consent = true;
-        for now in (0..=60_000).step_by(1000) {
+        for now in (0..=FIRST_CHECK_MS).step_by(1000) {
             update(&mut detector, now, 0);
         }
         let id = incident_id(detector.inactivity_id());
-        assert!(detector.respond(id, "claim", 60_000).is_err());
-        detector.respond(id, "studying", 60_000).unwrap();
-        detector.suppress_inactivity_until_input(input(61_000, 0));
-        for now in (61_000..=601_000).step_by(1000) {
-            update(&mut detector, now, 61_000);
+        assert!(detector.respond(id, "claim", FIRST_CHECK_MS).is_err());
+        detector.respond(id, "studying", FIRST_CHECK_MS).unwrap();
+        let answered_at = FIRST_CHECK_MS + 1000;
+        detector.suppress_inactivity_until_input(input(answered_at as u32, 0));
+        let new_input_at = answered_at + FINAL_CHECK_MS + 1000;
+        for now in (answered_at..new_input_at).step_by(1000) {
+            update(&mut detector, now, answered_at as u32);
             assert!(detector.inactivity_id().is_none());
         }
-        for now in (602_000..=662_000).step_by(1000) {
-            update(&mut detector, now, 602_000);
+        let next_check_at = new_input_at + FIRST_CHECK_MS;
+        for now in (new_input_at..=next_check_at).step_by(1000) {
+            update(&mut detector, now, new_input_at as u32);
         }
         let next = incident_id(detector.inactivity_id());
         assert_ne!(id, next);
-        detector.respond(next, "confirm_local", 662_000).unwrap();
-        assert!(detector.respond(next, "confirm_local", 662_000).is_err());
+        detector
+            .respond(next, "confirm_local", next_check_at)
+            .unwrap();
+        assert!(detector
+            .respond(next, "confirm_local", next_check_at)
+            .is_err());
         assert_eq!(detector.view.totals.confessions, 1);
     }
 
@@ -606,27 +622,30 @@ mod inactivity_tests {
     fn visible_youtube_stops_escalation_and_lifecycle_changes_clear_the_question() {
         let mut detector = Detector::default();
         detector.view.consent = true;
-        for now in (0..=300_000).step_by(1000) {
+        for now in (0..=SECOND_CHECK_MS).step_by(1000) {
             update(&mut detector, now, 0);
         }
         assert_eq!(detector.inactivity_stage(), 2);
         let pending = detector.inactivity_id();
-        detector.observe_inactivity(301_000, input(0, 301_000), true);
+        let youtube_at = SECOND_CHECK_MS + 1000;
+        detector.observe_inactivity(youtube_at, input(0, youtube_at), true);
         assert_eq!(detector.inactivity_id(), pending);
         assert_eq!(detector.inactivity_stage(), 0);
-        update(&mut detector, 302_000, 0);
+        update(&mut detector, youtube_at + 1000, 0);
         assert_eq!(detector.inactivity_id(), pending);
         assert_eq!(detector.inactivity_stage(), 0);
         detector.reset_inactivity(); // pause, also applied on starting a new task
-        detector.begin_inactivity(303_000);
-        for now in (303_000..=362_000).step_by(1000) {
+        let resumed_at = youtube_at + 2000;
+        let next_check_at = resumed_at + FIRST_CHECK_MS;
+        detector.begin_inactivity(resumed_at);
+        for now in (resumed_at..next_check_at).step_by(1000) {
             update(&mut detector, now, 0);
         }
         assert!(detector.inactivity_id().is_none()); // pre-resume time is excluded
-        update(&mut detector, 363_000, 0);
+        update(&mut detector, next_check_at, 0);
         assert!(detector.inactivity_id().is_some());
         detector.view.consent = false;
-        update(&mut detector, 364_000, 0);
+        update(&mut detector, next_check_at + 1000, 0);
         assert!(detector.inactivity_id().is_none());
         detector.reset_session();
         assert_eq!(detector.view.totals.confessions, 0);
